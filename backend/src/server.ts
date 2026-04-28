@@ -9,6 +9,7 @@ import { globalErrorHandler, notFoundHandler } from "./middleware/error-handler.
 import { initializeSocketServer } from "./realtime/socket.js";
 import { checkoutRouter } from "./routes/checkout.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
+import { cartRouter } from "./routes/cart.routes.js";
 import { orderRouter } from "./routes/order.routes.js";
 import { productRouter } from "./routes/product.routes.js";
 import { userRouter } from "./routes/user.routes.js";
@@ -25,6 +26,7 @@ initializeSocketServer(server);
 app.use("/images", express.static(path.resolve(process.cwd(), "public/images")));
 app.use("/api/auth", authRouter);
 app.use("/api/users", userRouter);
+app.use("/api/cart", cartRouter);
 app.use("/api/products", productRouter);
 app.use("/api/variants", variantRouter);
 app.use("/api/checkout", checkoutRouter);

@@ -6,6 +6,11 @@ type InventoryDepletedPayload = {
   variantId: string;
 };
 
+type InventoryUpdatedPayload = {
+  variantId: string;
+  inventoryCount: number;
+};
+
 let socketConnection: Socket | null = null;
 
 function getSocketUrl(): string {
@@ -25,10 +30,16 @@ export function useInventorySocket(): void {
       useAppStore.getState().setVariantInventoryCount(variantId, 0);
     };
 
+    const handleInventoryUpdated = ({ variantId, inventoryCount }: InventoryUpdatedPayload): void => {
+      useAppStore.getState().setVariantInventoryCount(variantId, inventoryCount);
+    };
+
     socketConnection.on("inventory_depleted", handleInventoryDepleted);
+    socketConnection.on("inventory_updated", handleInventoryUpdated);
 
     return () => {
       socketConnection?.off("inventory_depleted", handleInventoryDepleted);
+      socketConnection?.off("inventory_updated", handleInventoryUpdated);
     };
   }, []);
 }

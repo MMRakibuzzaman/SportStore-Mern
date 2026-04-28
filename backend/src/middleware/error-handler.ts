@@ -13,12 +13,20 @@ export function globalErrorHandler(
   res: Response,
   _next: NextFunction,
 ): void {
-  const statusCode = Number.isInteger(err.statusCode) ? (err.statusCode as number) : 500;
+  const isDuplicateKeyError =
+    typeof (err as unknown as { code?: unknown }).code === "number" &&
+    (err as unknown as { code?: number }).code === 11000;
+
+  const statusCode = isDuplicateKeyError
+    ? 409
+    : (Number.isInteger(err.statusCode) ? (err.statusCode as number) : 500);
   const isOperational = statusCode < 500;
 
   const payload: Record<string, unknown> = {
     success: false,
-    message: isOperational ? err.message : "Internal server error",
+    message: isDuplicateKeyError
+      ? "A record with the same unique value already exists."
+      : (isOperational ? err.message : "Internal server error"),
   };
 
   if (process.env.NODE_ENV !== "production" && err.details !== undefined) {

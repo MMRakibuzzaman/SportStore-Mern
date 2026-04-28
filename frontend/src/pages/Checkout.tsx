@@ -21,7 +21,10 @@ export function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const orderTotal = useMemo(() => calculateOrderTotal(shoppingCart), [shoppingCart]);
+  const orderTotal = useMemo(
+    () => calculateOrderTotal(shoppingCart),
+    [shoppingCart],
+  );
   const totalQuantity = useMemo(
     () => shoppingCart.reduce((sum, item) => sum + item.quantity, 0),
     [shoppingCart],
@@ -71,10 +74,6 @@ export function Checkout() {
       setSubmitError(null);
 
       const createdOrder = await createCheckoutOrder({
-        items: shoppingCart.map((item) => ({
-          variantId: item.variantId,
-          quantity: item.quantity,
-        })),
         shippingAddress: shippingForm,
       });
 
@@ -88,10 +87,12 @@ export function Checkout() {
       };
 
       saveInvoiceData(invoiceData);
-      clearCart();
+      await clearCart();
       navigate("/invoice");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to confirm checkout.");
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to confirm checkout.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -127,7 +128,8 @@ export function Checkout() {
       <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-8">
         <h1 className="text-3xl font-semibold text-white">Checkout</h1>
         <p className="mt-3 max-w-3xl text-slate-300">
-          Review the items, shipping information, and payment method before confirming.
+          Review the items, shipping information, and payment method before
+          confirming.
         </p>
         {!isAuthenticated ? (
           <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
@@ -149,12 +151,19 @@ export function Checkout() {
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
                 Order Summary
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-white">Items Purchased</h2>
+              <h2 className="mt-2 text-xl font-semibold text-white">
+                Items Purchased
+              </h2>
             </div>
 
             <div className="text-right text-sm text-slate-400">
-              <p>{shoppingCart.length} line item{shoppingCart.length === 1 ? "" : "s"}</p>
-              <p>{totalQuantity} total unit{totalQuantity === 1 ? "" : "s"}</p>
+              <p>
+                {shoppingCart.length} line item
+                {shoppingCart.length === 1 ? "" : "s"}
+              </p>
+              <p>
+                {totalQuantity} total unit{totalQuantity === 1 ? "" : "s"}
+              </p>
             </div>
           </div>
 
@@ -166,9 +175,11 @@ export function Checkout() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-white">{item.baseName}</p>
+                    <p className="text-sm font-semibold text-white">
+                      {item.baseName}
+                    </p>
                     <p className="mt-1 text-xs uppercase tracking-[0.12em] text-slate-400">
-                      {item.brand} - {item.size} - {item.color}
+                      SKU {item.sku}
                     </p>
                   </div>
 
@@ -179,7 +190,9 @@ export function Checkout() {
                 </div>
 
                 <div className="mt-3 flex items-center justify-between text-sm">
-                  <p className="text-slate-300">Unit: ${item.price.toFixed(2)}</p>
+                  <p className="text-slate-300">
+                    Unit: ${item.price.toFixed(2)}
+                  </p>
                   <p className="font-semibold text-cyan-300">
                     ${(item.price * item.quantity).toFixed(2)}
                   </p>
@@ -190,7 +203,9 @@ export function Checkout() {
 
           <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
             <p className="text-sm font-medium text-slate-300">Total</p>
-            <p className="text-base font-semibold text-cyan-300">${orderTotal.toFixed(2)}</p>
+            <p className="text-base font-semibold text-cyan-300">
+              ${orderTotal.toFixed(2)}
+            </p>
           </div>
         </section>
 
@@ -199,40 +214,58 @@ export function Checkout() {
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
               Shipping Details
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-white">Customer Information</h2>
+            <h2 className="mt-2 text-xl font-semibold text-white">
+              Customer Information
+            </h2>
           </div>
 
           <dl className="mt-4 grid gap-4 text-sm text-slate-300 md:grid-cols-2">
             <div>
-              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Email</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Email
+              </dt>
               <dd className="mt-1 text-slate-100">{shippingForm.email}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Street Address</dt>
-              <dd className="mt-1 text-slate-100">{shippingForm.streetLine1}</dd>
+              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Street Address
+              </dt>
+              <dd className="mt-1 text-slate-100">
+                {shippingForm.streetLine1}
+              </dd>
             </div>
             {shippingForm.streetLine2 ? (
               <div className="md:col-span-2">
                 <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
                   Apartment, suite, etc.
                 </dt>
-                <dd className="mt-1 text-slate-100">{shippingForm.streetLine2}</dd>
+                <dd className="mt-1 text-slate-100">
+                  {shippingForm.streetLine2}
+                </dd>
               </div>
             ) : null}
             <div>
-              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">City</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                City
+              </dt>
               <dd className="mt-1 text-slate-100">{shippingForm.city}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">State / Province</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                State / Province
+              </dt>
               <dd className="mt-1 text-slate-100">{shippingForm.state}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Postal Code</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Postal Code
+              </dt>
               <dd className="mt-1 text-slate-100">{shippingForm.postalCode}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Country</dt>
+              <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Country
+              </dt>
               <dd className="mt-1 text-slate-100">{shippingForm.country}</dd>
             </div>
           </dl>
@@ -243,12 +276,19 @@ export function Checkout() {
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
               Payment
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-white">Choose Payment Method</h2>
+            <h2 className="mt-2 text-xl font-semibold text-white">
+              Choose Payment Method
+            </h2>
           </div>
 
           <div className="mt-4 rounded-2xl border border-cyan-400/30 bg-cyan-400/10 p-4">
             <label className="flex cursor-default items-center gap-3 text-sm text-slate-200">
-              <input type="radio" checked readOnly className="h-4 w-4 accent-cyan-400" />
+              <input
+                type="radio"
+                checked
+                readOnly
+                className="h-4 w-4 accent-cyan-400"
+              />
               Cash on Delivery
             </label>
             <p className="mt-2 text-xs text-slate-400">
@@ -269,10 +309,11 @@ export function Checkout() {
             type="button"
             onClick={handleConfirm}
             disabled={!isAuthenticated || isSubmitting}
-            className={`rounded-xl px-5 py-3 text-sm font-semibold text-slate-950 transition ${!isAuthenticated || isSubmitting
-              ? "cursor-not-allowed bg-cyan-400/40"
-              : "bg-cyan-400 hover:bg-cyan-300"
-              }`}
+            className={`rounded-xl px-5 py-3 text-sm font-semibold text-slate-950 transition ${
+              !isAuthenticated || isSubmitting
+                ? "cursor-not-allowed bg-cyan-400/40"
+                : "bg-cyan-400 hover:bg-cyan-300"
+            }`}
           >
             {isSubmitting ? "Confirming..." : "Confirm"}
           </button>

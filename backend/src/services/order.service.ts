@@ -1,4 +1,5 @@
 import { OrderRepository } from "../repositories/order.repository.js";
+import { ProductRepository } from "../repositories/product.repository.js";
 import { UserRepository } from "../repositories/user.repository.js";
 import type { HttpError } from "../types/http-error.js";
 import type {
@@ -11,6 +12,7 @@ export class OrderService {
   constructor(
     private readonly orderRepository: OrderRepository = new OrderRepository(),
     private readonly userRepository: UserRepository = new UserRepository(),
+    private readonly productRepository: ProductRepository = new ProductRepository(),
   ) { }
 
   async getAllOrders(): Promise<AdminOrderListItem[]> {
@@ -38,28 +40,34 @@ export class OrderService {
       user.pastOrderIds.map((orderId) => orderId.toString()),
     );
 
-    return orders.map((order) => ({
-      id: order._id.toString(),
-      email: order.email,
-      createdAt: (order as typeof order & { createdAt?: Date }).createdAt?.toISOString() ?? new Date().toISOString(),
-      itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
-      totalCost: order.totalCost,
-      orderStatus: order.orderStatus,
-      shippingAddress: {
-        streetLine1: order.shippingAddress.streetLine1,
-        streetLine2: order.shippingAddress.streetLine2,
-        city: order.shippingAddress.city,
-        state: order.shippingAddress.state,
-        postalCode: order.shippingAddress.postalCode,
-        country: order.shippingAddress.country,
-      },
-      items: order.items.map((item) => ({
-        name: item.name,
-        sku: item.sku,
-        price: item.price,
-        quantity: item.quantity,
+    const nameBySku = new Map<string, string>();
+
+    return Promise.all(
+      orders.map(async (order) => ({
+        id: order._id.toString(),
+        email: order.email,
+        createdAt: (order as typeof order & { createdAt?: Date }).createdAt?.toISOString() ?? new Date().toISOString(),
+        itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        totalCost: order.totalCost,
+        orderStatus: order.orderStatus,
+        shippingAddress: {
+          streetLine1: order.shippingAddress.streetLine1,
+          streetLine2: order.shippingAddress.streetLine2,
+          city: order.shippingAddress.city,
+          state: order.shippingAddress.state,
+          postalCode: order.shippingAddress.postalCode,
+          country: order.shippingAddress.country,
+        },
+        items: await Promise.all(
+          order.items.map(async (item) => ({
+            name: await this.resolveOrderItemName(item.name, item.sku, nameBySku),
+            sku: item.sku,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+        ),
       })),
-    }));
+    );
   }
 
   async markOrderShipped(orderId: string): Promise<UpdateOrderStatusResult> {
@@ -89,5 +97,43 @@ export class OrderService {
     const error = new Error(message) as HttpError;
     error.statusCode = statusCode;
     return error;
+  }
+
+  private async resolveOrderItemName(
+    currentName: string,
+    sku: string,
+    cache: Map<string, string>,
+  ): Promise<string> {
+    const normalizedCurrentName = currentName.trim();
+    const normalizedSku = sku.trim().toUpperCase();
+
+    if (
+      normalizedCurrentName.length > 0 &&
+      normalizedCurrentName.toUpperCase() !== normalizedSku
+    ) {
+      return currentName;
+    }
+
+    const cachedName = cache.get(normalizedSku);
+
+    if (cachedName) {
+      return cachedName;
+    }
+
+    const variant = await this.productRepository.findVariantBySku(normalizedSku);
+
+    if (!variant) {
+      return normalizedCurrentName.length > 0 ? currentName : sku;
+    }
+
+    const product = await this.productRepository.findProductById(variant.product.toString());
+    const resolvedName = product?.baseName?.trim();
+
+    if (!resolvedName) {
+      return normalizedCurrentName.length > 0 ? currentName : sku;
+    }
+
+    cache.set(normalizedSku, resolvedName);
+    return resolvedName;
   }
 }

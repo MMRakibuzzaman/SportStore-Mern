@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import type { VariantAttributes, VariantDocument } from "../models/variant.model.js";
 import { emitInventoryDepleted } from "../realtime/socket.js";
 import { ProductService } from "../services/product.service.js";
 import type { ProductCatalogQuery } from "../validation/product-query.validation.js";
@@ -26,6 +27,25 @@ import {
   type VariantIdParams,
 } from "../validation/variant.validation.js";
 import type { HttpError } from "../types/http-error.js";
+
+const LEGACY_VARIANT_ATTRIBUTE_KEYS = [
+  "size",
+  "color",
+  "fit",
+  "surface",
+  "material",
+  "type",
+  "gripSize",
+  "headSize",
+  "weightLbs",
+  "weightG",
+  "handle",
+  "willowType",
+  "orientation",
+  "use",
+  "shoeSize",
+  "studType",
+] as const;
 
 export class ProductController {
   constructor(private readonly productService: ProductService = new ProductService()) { }
@@ -76,10 +96,11 @@ export class ProductController {
     try {
       const { id } = this.parseProductIdParams(req.params);
       const variants = await this.productService.getVariantsByProductId(id);
+      const normalizedVariants = variants.map((variant) => this.normalizeVariantForResponse(variant));
 
       res.status(200).json({
         success: true,
-        data: variants,
+        data: normalizedVariants,
       });
     } catch (error) {
       next(error);
@@ -400,5 +421,66 @@ export class ProductController {
     error.statusCode = statusCode;
     error.details = details;
     return error;
+  }
+
+  private normalizeVariantForResponse(variant: VariantDocument): Record<string, unknown> {
+    const variantObject = variant.toObject() as unknown as Record<string, unknown>;
+    const normalizedAttributes = this.normalizeAttributeRecord(variantObject.attributes);
+
+    for (const key of LEGACY_VARIANT_ATTRIBUTE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(normalizedAttributes, key)) {
+        continue;
+      }
+
+      const value = variantObject[key];
+
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        value === null
+      ) {
+        normalizedAttributes[key] = value;
+      }
+    }
+
+    return {
+      ...variantObject,
+      attributes: normalizedAttributes,
+    };
+  }
+
+  private normalizeAttributeRecord(value: unknown): VariantAttributes {
+    const attributes: VariantAttributes = {};
+
+    if (value instanceof Map) {
+      for (const [key, entry] of value.entries()) {
+        if (
+          typeof entry === "string" ||
+          typeof entry === "number" ||
+          typeof entry === "boolean" ||
+          entry === null
+        ) {
+          attributes[String(key)] = entry;
+        }
+      }
+
+      return attributes;
+    }
+
+    if (value && typeof value === "object") {
+      for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+        if (
+          typeof entry === "string" ||
+          typeof entry === "number" ||
+          typeof entry === "boolean" ||
+          entry === null
+        ) {
+          attributes[key] = entry;
+        }
+      }
+    }
+
+    return attributes;
   }
 }

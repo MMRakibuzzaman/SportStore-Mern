@@ -1,13 +1,7 @@
 import { api } from "./api.js";
 import type { ShippingFormState } from "./checkoutStorage.js";
 
-export interface CheckoutOrderItemPayload {
-  variantId: string;
-  quantity: number;
-}
-
 export interface CreateCheckoutOrderPayload {
-  items: CheckoutOrderItemPayload[];
   shippingAddress: ShippingFormState;
 }
 

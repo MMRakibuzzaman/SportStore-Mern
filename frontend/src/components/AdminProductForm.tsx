@@ -48,19 +48,26 @@ function toAttributeKey(name: string): string {
     .split(/\s+/)
     .map((segment, index) => {
       const lower = segment.toLowerCase();
-      return index === 0 ? lower : lower.charAt(0).toUpperCase() + lower.slice(1);
+      return index === 0
+        ? lower
+        : lower.charAt(0).toUpperCase() + lower.slice(1);
     })
     .join("");
 }
 
-function buildDefaultAttributes(category: ProductCategory): Record<string, string | number> {
+function buildDefaultAttributes(
+  category: ProductCategory,
+): Record<string, string | number> {
   const fields = categoryConfig[category] ?? [];
 
-  return fields.reduce<Record<string, string | number>>((accumulator, field) => {
-    const key = toAttributeKey(field.name);
-    accumulator[key] = field.type === "number" ? 0 : "";
-    return accumulator;
-  }, {});
+  return fields.reduce<Record<string, string | number>>(
+    (accumulator, field) => {
+      const key = toAttributeKey(field.name);
+      accumulator[key] = field.type === "number" ? 0 : "";
+      return accumulator;
+    },
+    {},
+  );
 }
 
 function normalizeVariantAttributes(
@@ -69,30 +76,44 @@ function normalizeVariantAttributes(
 ): Record<string, string | number> {
   const configFields = categoryConfig[category] ?? [];
 
-  return configFields.reduce<Record<string, string | number>>((accumulator, field) => {
-    const key = toAttributeKey(field.name);
-    const rawValue = variant.attributes?.[key];
+  return configFields.reduce<Record<string, string | number>>(
+    (accumulator, field) => {
+      const key = toAttributeKey(field.name);
+      const rawValue = variant.attributes?.[key];
 
-    if (field.type === "number") {
-      accumulator[key] = Number(rawValue ?? 0);
+      if (field.type === "number") {
+        accumulator[key] = Number(rawValue ?? 0);
+        return accumulator;
+      }
+
+      accumulator[key] = String(rawValue ?? "").trim();
       return accumulator;
-    }
-
-    accumulator[key] = String(rawValue ?? "").trim();
-    return accumulator;
-  }, {});
+    },
+    {},
+  );
 }
 
-function resolveWeight(category: ProductCategory, variant: AdminProductVariantInput): number {
+function resolveWeight(
+  category: ProductCategory,
+  variant: AdminProductVariantInput,
+): number {
   if (category === "Cricket Bat") {
     const weightFromAttributes = Number(variant.attributes?.weightLbs ?? 0);
     return Number.isFinite(weightFromAttributes) ? weightFromAttributes : 0;
   }
 
+  if (category === "Tennis Racket") {
+    const weightFromAttributes = Number(variant.attributes?.weightG ?? 0);
+    const weightInKilograms = weightFromAttributes / 1000;
+    return Number.isFinite(weightInKilograms) ? weightInKilograms : 0;
+  }
+
   return Number(variant.weight);
 }
 
-function createEmptyVariant(category: ProductCategory = "Cricket Bat"): AdminProductVariantInput {
+function createEmptyVariant(
+  category: ProductCategory = "Cricket Bat",
+): AdminProductVariantInput {
   return {
     sku: "",
     price: 0,
@@ -192,7 +213,12 @@ export function AdminProductForm({
           baseName: "",
           brand: "",
           category: "Cricket Bat",
-          variants: [{ ...createEmptyVariant(), attributes: buildDefaultAttributes("Cricket Bat") }],
+          variants: [
+            {
+              ...createEmptyVariant(),
+              attributes: buildDefaultAttributes("Cricket Bat"),
+            },
+          ],
         });
       } else {
         await api.put(`/products/${productId}`, formData, {
@@ -204,7 +230,9 @@ export function AdminProductForm({
 
       onSuccess?.();
     } catch (error) {
-      setSubmissionError(error instanceof Error ? error.message : "Failed to save product.");
+      setSubmissionError(
+        error instanceof Error ? error.message : "Failed to save product.",
+      );
     } finally {
       setIsSubmittingForm(false);
     }
@@ -212,7 +240,9 @@ export function AdminProductForm({
 
   return (
     <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/30">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Collection Editor</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+        Collection Editor
+      </p>
       <h3 className="mt-2 text-2xl font-semibold text-white">
         {mode === "create" ? "Create Product" : "Update Product"}
       </h3>
@@ -220,17 +250,24 @@ export function AdminProductForm({
       <form className="mt-6 space-y-6" onSubmit={handleSubmit(onSubmit)}>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2">
-            <span className="text-sm font-medium text-slate-300">Base Name</span>
+            <span className="text-sm font-medium text-slate-300">
+              Base Name
+            </span>
             <input
               type="text"
               {...register("baseName", {
                 required: "Base name is required.",
-                minLength: { value: 2, message: "Base name must be at least 2 characters." },
+                minLength: {
+                  value: 2,
+                  message: "Base name must be at least 2 characters.",
+                },
               })}
               className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20"
               placeholder="Velocity Runner"
             />
-            {errors.baseName ? <p className="text-sm text-red-300">{errors.baseName.message}</p> : null}
+            {errors.baseName ? (
+              <p className="text-sm text-red-300">{errors.baseName.message}</p>
+            ) : null}
           </label>
 
           <label className="space-y-2">
@@ -239,12 +276,17 @@ export function AdminProductForm({
               type="text"
               {...register("brand", {
                 required: "Brand is required.",
-                minLength: { value: 2, message: "Brand must be at least 2 characters." },
+                minLength: {
+                  value: 2,
+                  message: "Brand must be at least 2 characters.",
+                },
               })}
               className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20"
               placeholder="SportStore Pro"
             />
-            {errors.brand ? <p className="text-sm text-red-300">{errors.brand.message}</p> : null}
+            {errors.brand ? (
+              <p className="text-sm text-red-300">{errors.brand.message}</p>
+            ) : null}
           </label>
 
           <label className="space-y-2">
@@ -261,11 +303,15 @@ export function AdminProductForm({
                 </option>
               ))}
             </select>
-            {errors.category ? <p className="text-sm text-red-300">{errors.category.message}</p> : null}
+            {errors.category ? (
+              <p className="text-sm text-red-300">{errors.category.message}</p>
+            ) : null}
           </label>
 
           <label className="space-y-2 md:col-span-2">
-            <span className="text-sm font-medium text-slate-300">Product Image</span>
+            <span className="text-sm font-medium text-slate-300">
+              Product Image
+            </span>
             <input
               type="file"
               accept="image/*"
@@ -275,7 +321,11 @@ export function AdminProductForm({
           </label>
         </div>
 
-        <VariantFieldArray control={control} register={register} selectedCategory={selectedCategory} />
+        <VariantFieldArray
+          control={control}
+          register={register}
+          selectedCategory={selectedCategory}
+        />
 
         {submissionError ? (
           <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -288,7 +338,11 @@ export function AdminProductForm({
           disabled={isSubmittingForm}
           className="w-full rounded-xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isSubmittingForm ? "Saving Product..." : mode === "create" ? "Create Product" : "Update Product"}
+          {isSubmittingForm
+            ? "Saving Product..."
+            : mode === "create"
+              ? "Create Product"
+              : "Update Product"}
         </button>
       </form>
     </section>

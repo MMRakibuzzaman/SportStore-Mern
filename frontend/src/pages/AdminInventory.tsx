@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { io, type Socket } from "socket.io-client";
 import { api } from "../services/api.js";
 
 interface AdminVariantInventoryItem {
@@ -27,20 +28,83 @@ interface SetStockResponse {
   };
 }
 
+type InventoryUpdatedPayload = {
+  variantId: string;
+  inventoryCount: number;
+};
+
+type InventoryDepletedPayload = {
+  variantId: string;
+};
+
+let inventorySocket: Socket | null = null;
+
+function getSocketUrl(): string {
+  return import.meta.env.VITE_SOCKET_URL ?? "http://localhost:4000";
+}
+
 export function AdminInventory() {
   const [searchParams] = useSearchParams();
   const [variants, setVariants] = useState<AdminVariantInventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [selectedVariant, setSelectedVariant] = useState<AdminVariantInventoryItem | null>(null);
+  const [selectedVariant, setSelectedVariant] =
+    useState<AdminVariantInventoryItem | null>(null);
   const [stockInput, setStockInput] = useState<string>("");
   const [isSavingStock, setIsSavingStock] = useState(false);
-  const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
-  const stockFilterRaw = searchParams.get("stock")?.trim().toLowerCase() ?? "all";
+  const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(
+    null,
+  );
+  const stockFilterRaw =
+    searchParams.get("stock")?.trim().toLowerCase() ?? "all";
   const stockFilter: "all" | "low" | "out" | "in" =
-    stockFilterRaw === "low" || stockFilterRaw === "out" || stockFilterRaw === "in"
+    stockFilterRaw === "low" ||
+    stockFilterRaw === "out" ||
+    stockFilterRaw === "in"
       ? stockFilterRaw
       : "all";
+
+  useEffect(() => {
+    if (!inventorySocket) {
+      inventorySocket = io(getSocketUrl(), {
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+      });
+    }
+
+    const handleInventoryUpdated = ({
+      variantId,
+      inventoryCount,
+    }: InventoryUpdatedPayload): void => {
+      setVariants((current) =>
+        current.map((variant) =>
+          variant.variantId === variantId
+            ? { ...variant, inventoryCount }
+            : variant,
+        ),
+      );
+    };
+
+    const handleInventoryDepleted = ({
+      variantId,
+    }: InventoryDepletedPayload): void => {
+      setVariants((current) =>
+        current.map((variant) =>
+          variant.variantId === variantId
+            ? { ...variant, inventoryCount: 0 }
+            : variant,
+        ),
+      );
+    };
+
+    inventorySocket.on("inventory_updated", handleInventoryUpdated);
+    inventorySocket.on("inventory_depleted", handleInventoryDepleted);
+
+    return () => {
+      inventorySocket?.off("inventory_updated", handleInventoryUpdated);
+      inventorySocket?.off("inventory_depleted", handleInventoryDepleted);
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,9 +114,12 @@ export function AdminInventory() {
         setIsLoading(true);
         setErrorMessage(null);
 
-        const response = await api.get<InventoryResponse>("/products/variants", {
-          signal: controller.signal,
-        });
+        const response = await api.get<InventoryResponse>(
+          "/products/variants",
+          {
+            signal: controller.signal,
+          },
+        );
 
         if (controller.signal.aborted) {
           return;
@@ -64,7 +131,9 @@ export function AdminInventory() {
           return;
         }
 
-        setErrorMessage(error instanceof Error ? error.message : "Failed to load inventory.");
+        setErrorMessage(
+          error instanceof Error ? error.message : "Failed to load inventory.",
+        );
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -96,7 +165,8 @@ export function AdminInventory() {
   }, [variants, stockFilter]);
 
   const lowStockCount = useMemo(
-    () => filteredVariants.filter((variant) => variant.inventoryCount < 5).length,
+    () =>
+      filteredVariants.filter((variant) => variant.inventoryCount < 5).length,
     [filteredVariants],
   );
 
@@ -143,7 +213,9 @@ export function AdminInventory() {
 
       closeAddStockModal();
     } catch (error) {
-      setModalErrorMessage(error instanceof Error ? error.message : "Failed to update stock.");
+      setModalErrorMessage(
+        error instanceof Error ? error.message : "Failed to update stock.",
+      );
     } finally {
       setIsSavingStock(false);
     }
@@ -153,16 +225,25 @@ export function AdminInventory() {
     <section className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Inventory</p>
-          <h2 className="mt-2 text-2xl font-semibold text-white">Inventory Management</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">
+            Inventory
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-white">
+            Inventory Management
+          </h2>
           <p className="mt-3 max-w-2xl text-slate-300">
-            Audit all variant stock levels and prioritize low inventory items for replenishment.
+            Audit all variant stock levels and prioritize low inventory items
+            for replenishment.
           </p>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 text-right">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Low Stock</p>
-          <p className="mt-1 text-xl font-semibold text-red-300">{lowStockCount}</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+            Low Stock
+          </p>
+          <p className="mt-1 text-xl font-semibold text-red-300">
+            {lowStockCount}
+          </p>
         </div>
       </header>
 
@@ -208,25 +289,36 @@ export function AdminInventory() {
                   return (
                     <tr
                       key={variant.variantId}
-                      className={`transition ${isLowStock
-                        ? "bg-red-500/20 hover:bg-red-500/25"
-                        : "bg-slate-900/20 hover:bg-white/5"
-                        }`}
+                      className={`transition ${
+                        isLowStock
+                          ? "bg-red-500/20 hover:bg-red-500/25"
+                          : "bg-slate-900/20 hover:bg-white/5"
+                      }`}
                     >
-                      <td className="px-4 py-4 font-medium text-white">{variant.sku}</td>
+                      <td className="px-4 py-4 font-medium text-white">
+                        {variant.sku}
+                      </td>
                       <td className="px-4 py-4">{variant.baseName}</td>
                       <td className="px-4 py-4">{variant.brand}</td>
                       <td className="px-4 py-4 text-slate-300">
                         {Object.entries(variant.attributes).length === 0
                           ? "-"
                           : Object.entries(variant.attributes)
-                            .map(([key, value]) => `${key}: ${String(value)}`)
-                            .join(", ")}
+                              .map(([key, value]) => `${key}: ${String(value)}`)
+                              .join(", ")}
                       </td>
-                      <td className="px-4 py-4 text-cyan-300">${variant.price.toFixed(2)}</td>
-                      <td className="px-4 py-4">{variant.weight.toFixed(2)} kg</td>
+                      <td className="px-4 py-4 text-cyan-300">
+                        ${variant.price.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-4">
+                        {variant.weight.toFixed(2)} kg
+                      </td>
                       <td className="px-4 py-4 font-semibold">
-                        <span className={isLowStock ? "text-red-200" : "text-emerald-300"}>
+                        <span
+                          className={
+                            isLowStock ? "text-red-200" : "text-emerald-300"
+                          }
+                        >
                           {variant.inventoryCount}
                         </span>
                       </td>
@@ -252,15 +344,23 @@ export function AdminInventory() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/40">
             <div className="border-b border-white/10 pb-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Adjust Inventory</p>
-              <h3 className="mt-2 text-xl font-semibold text-white">Set Inventory Count</h3>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+                Adjust Inventory
+              </p>
+              <h3 className="mt-2 text-xl font-semibold text-white">
+                Set Inventory Count
+              </h3>
               <p className="mt-2 text-sm text-slate-300">
-                {selectedVariant.baseName} ({selectedVariant.sku}) currently has {selectedVariant.inventoryCount} units.
+                {selectedVariant.baseName} ({selectedVariant.sku}) currently has{" "}
+                {selectedVariant.inventoryCount} units.
               </p>
             </div>
 
             <div className="mt-5 space-y-3">
-              <label className="block text-sm font-medium text-slate-300" htmlFor="stock-units-input">
+              <label
+                className="block text-sm font-medium text-slate-300"
+                htmlFor="stock-units-input"
+              >
                 New inventory count
               </label>
               <input

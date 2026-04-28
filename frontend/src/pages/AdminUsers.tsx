@@ -31,7 +31,9 @@ export function AdminUsers() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [updatingUserIds, setUpdatingUserIds] = useState<Record<string, boolean>>({});
+  const [updatingUserIds, setUpdatingUserIds] = useState<
+    Record<string, boolean>
+  >({});
   const [toast, setToast] = useState<ToastState | null>(null);
   const roleFilterRaw = searchParams.get("role")?.trim().toLowerCase() ?? "all";
   const roleFilter: "all" | "admin" | "customer" =
@@ -61,7 +63,9 @@ export function AdminUsers() {
           return;
         }
 
-        setErrorMessage(error instanceof Error ? error.message : "Failed to load users.");
+        setErrorMessage(
+          error instanceof Error ? error.message : "Failed to load users.",
+        );
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -82,7 +86,9 @@ export function AdminUsers() {
     }
 
     const timeout = window.setTimeout(() => {
-      setToast((currentToast) => (currentToast?.id === toast.id ? null : currentToast));
+      setToast((currentToast) =>
+        currentToast?.id === toast.id ? null : currentToast,
+      );
     }, 2200);
 
     return () => {
@@ -109,10 +115,10 @@ export function AdminUsers() {
   }, [users, roleFilter]);
 
   const showSuccessToast = (message: string): void => {
-    setToast({
-      id: Date.now(),
+    setToast((currentToast) => ({
+      id: (currentToast?.id ?? 0) + 1,
       message,
-    });
+    }));
   };
 
   const formatJoinDate = (dateText: string): string => {
@@ -129,7 +135,10 @@ export function AdminUsers() {
     }).format(date);
   };
 
-  const handleRoleChange = async (userId: string, nextRole: UserRole): Promise<void> => {
+  const handleRoleChange = async (
+    userId: string,
+    nextRole: UserRole,
+  ): Promise<void> => {
     const currentUser = users.find((user) => user.id === userId);
 
     if (!currentUser || currentUser.role === nextRole) {
@@ -147,17 +156,20 @@ export function AdminUsers() {
       current.map((user) =>
         user.id === userId
           ? {
-            ...user,
-            role: nextRole,
-          }
+              ...user,
+              role: nextRole,
+            }
           : user,
       ),
     );
 
     try {
-      const response = await api.patch<UpdateUserRoleResponse>(`/users/${userId}/role`, {
-        role: nextRole,
-      });
+      const response = await api.patch<UpdateUserRoleResponse>(
+        `/users/${userId}/role`,
+        {
+          role: nextRole,
+        },
+      );
 
       setUsers((current) =>
         current.map((user) => (user.id === userId ? response.data.data : user)),
@@ -169,14 +181,16 @@ export function AdminUsers() {
         current.map((user) =>
           user.id === userId
             ? {
-              ...user,
-              role: previousRole,
-            }
+                ...user,
+                role: previousRole,
+              }
             : user,
         ),
       );
 
-      setErrorMessage(error instanceof Error ? error.message : "Failed to update user role.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to update user role.",
+      );
     } finally {
       setUpdatingUserIds((current) => {
         const next = { ...current };
@@ -190,8 +204,12 @@ export function AdminUsers() {
     <section className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Users</p>
-          <h2 className="mt-2 text-2xl font-semibold text-white">Role Management</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">
+            Users
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-white">
+            Role Management
+          </h2>
           <p className="mt-3 max-w-2xl text-slate-300">
             Manage customer and admin permissions with immediate role updates.
           </p>
@@ -199,12 +217,20 @@ export function AdminUsers() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 text-right">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Admins</p>
-            <p className="mt-1 text-xl font-semibold text-cyan-300">{userCounts.admins}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+              Admins
+            </p>
+            <p className="mt-1 text-xl font-semibold text-cyan-300">
+              {userCounts.admins}
+            </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 text-right">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Customers</p>
-            <p className="mt-1 text-xl font-semibold text-emerald-300">{userCounts.customers}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+              Customers
+            </p>
+            <p className="mt-1 text-xl font-semibold text-emerald-300">
+              {userCounts.customers}
+            </p>
           </div>
         </div>
       </header>
@@ -244,8 +270,13 @@ export function AdminUsers() {
                   const isUpdating = updatingUserIds[user.id] === true;
 
                   return (
-                    <tr key={user.id} className="bg-slate-900/20 hover:bg-white/5">
-                      <td className="px-4 py-4 font-medium text-white">{user.email}</td>
+                    <tr
+                      key={user.id}
+                      className="bg-slate-900/20 hover:bg-white/5"
+                    >
+                      <td className="px-4 py-4 font-medium text-white">
+                        {user.email}
+                      </td>
                       <td className="px-4 py-4">
                         <select
                           value={user.role}
@@ -254,19 +285,23 @@ export function AdminUsers() {
                             void handleRoleChange(user.id, nextRole);
                           }}
                           disabled={isUpdating}
-                          className={`rounded-lg border bg-slate-900 px-3 py-2 text-sm outline-none transition ${user.role === "admin"
-                            ? "border-cyan-400/40 text-cyan-200"
-                            : "border-emerald-400/40 text-emerald-200"
-                            } ${isUpdating
+                          className={`rounded-lg border bg-slate-900 px-3 py-2 text-sm outline-none transition ${
+                            user.role === "admin"
+                              ? "border-cyan-400/40 text-cyan-200"
+                              : "border-emerald-400/40 text-emerald-200"
+                          } ${
+                            isUpdating
                               ? "cursor-not-allowed opacity-70"
                               : "focus:ring-2 focus:ring-cyan-400/30"
-                            }`}
+                          }`}
                         >
                           <option value="customer">customer</option>
                           <option value="admin">admin</option>
                         </select>
                       </td>
-                      <td className="px-4 py-4 text-slate-300">{formatJoinDate(user.createdAt)}</td>
+                      <td className="px-4 py-4 text-slate-300">
+                        {formatJoinDate(user.createdAt)}
+                      </td>
                     </tr>
                   );
                 })

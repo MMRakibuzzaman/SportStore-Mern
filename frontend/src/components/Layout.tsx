@@ -5,6 +5,7 @@ import { useAppStore } from "../store/useAppStore.js";
 export function Layout() {
   const navigate = useNavigate();
   const auth = useAppStore((state) => state.auth);
+  const shoppingCart = useAppStore((state) => state.shoppingCart);
   const logoutUser = useAppStore((state) => state.logoutUser);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
@@ -26,7 +27,9 @@ export function Layout() {
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-900/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4 lg:px-10">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">SportStore</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
+              SportStore
+            </p>
             <p className="mt-1 text-sm text-slate-300">Commerce Platform</p>
           </div>
 
@@ -40,7 +43,10 @@ export function Layout() {
               </Link>
             ) : null}
 
-            <Link to="/" className="rounded-lg px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10">
+            <Link
+              to="/"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+            >
               Home
             </Link>
             <Link
@@ -51,9 +57,14 @@ export function Layout() {
             </Link>
             <Link
               to="/cart"
-              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+              className="relative rounded-lg px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
             >
               Cart
+              {shoppingCart.length > 0 ? (
+                <span className="absolute -top-1 -right-2 rounded-full bg-cyan-400 px-1.5 py-0.5 text-xs font-semibold leading-none text-slate-950">
+                  {shoppingCart.length}
+                </span>
+              ) : null}
             </Link>
 
             {!isAuthenticated ? (

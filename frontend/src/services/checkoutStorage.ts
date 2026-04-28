@@ -98,3 +98,52 @@ export function saveInvoiceData(data: CheckoutInvoiceData): void {
 export function loadInvoiceData(): CheckoutInvoiceData | null {
   return safeRead<CheckoutInvoiceData>(INVOICE_STORAGE_KEY);
 }
+
+// Order Invoice Storage (for past orders from My Orders page)
+export interface OrderInvoiceItem {
+  name: string;
+  sku: string;
+  price: number;
+  quantity: number;
+}
+
+export interface OrderInvoiceData {
+  orderId: string;
+  createdAt: string;
+  shippingAddress: ShippingFormState;
+  items: OrderInvoiceItem[];
+  orderStatus: "Pending" | "Shipped" | "Delivered";
+  orderTotal: number;
+  email: string;
+}
+
+function getOrderInvoiceStorageKey(orderId: string): string {
+  return `sportstore.invoice.order.${orderId}`;
+}
+
+export function saveOrderInvoice(orderInvoice: OrderInvoiceData): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const key = getOrderInvoiceStorageKey(orderInvoice.orderId);
+  window.localStorage.setItem(key, JSON.stringify(orderInvoice));
+}
+
+export function loadOrderInvoice(orderId: string): OrderInvoiceData | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const key = getOrderInvoiceStorageKey(orderId);
+  return safeRead<OrderInvoiceData>(key);
+}
+
+export function clearOrderInvoice(orderId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const key = getOrderInvoiceStorageKey(orderId);
+  window.localStorage.removeItem(key);
+}

@@ -71,6 +71,20 @@ export class ProductRepository {
     return Product.findByIdAndDelete(objectId).exec();
   }
 
+  async deleteVariantsByProductId(productId: string): Promise<void> {
+    const objectId = this.toObjectId(productId);
+    await Variant.deleteMany({ product: objectId }).exec();
+  }
+
+  async deleteVariantsByIds(variantIds: string[]): Promise<void> {
+    if (variantIds.length === 0) {
+      return;
+    }
+
+    const objectIds = variantIds.map((id) => this.toObjectId(id));
+    await Variant.deleteMany({ _id: { $in: objectIds } }).exec();
+  }
+
   async findAllVariants(): Promise<VariantDocument[]> {
     return Variant.find().sort({ createdAt: -1 }).exec();
   }
@@ -140,8 +154,19 @@ export class ProductRepository {
     return Variant.findById(objectId).session(session ?? null).exec();
   }
 
-  async findVariantBySku(sku: string): Promise<VariantDocument | null> {
-    return Variant.findOne({ sku: sku.toUpperCase() }).exec();
+  async findVariantBySku(sku: string, productId?: string): Promise<VariantDocument | null> {
+    const filter: {
+      sku: string;
+      product?: Types.ObjectId;
+    } = {
+      sku: sku.toUpperCase(),
+    };
+
+    if (productId) {
+      filter.product = this.toObjectId(productId);
+    }
+
+    return Variant.findOne(filter).exec();
   }
 
   async findVariantsByProductId(productId: string): Promise<VariantDocument[]> {

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { AxiosError } from "axios";
 import { FilterSidebar } from "../components/FilterSidebar.js";
-import type { ProductCardDetail } from "../components/ProductCard.js";
+import type {
+  ProductCardDetail,
+  VariantOption,
+} from "../components/ProductCard.js";
 import { ProductCard } from "../components/ProductCard.js";
 import { api } from "../services/api.js";
 import { useAppStore, type DisplayedProduct } from "../store/useAppStore.js";
@@ -35,18 +38,17 @@ interface BackendCatalogResponse {
   };
 }
 
+interface GroupedProduct {
+  productId: string;
+  baseName: string;
+  brand: string;
+  imagePath?: string;
+  variants: VariantOption[];
+}
+
 interface CatalogCard extends DisplayedProduct {
   imageUrl: string;
   attributes: Record<string, string | number | boolean | null>;
-  hasUploadedImage: boolean;
-}
-
-interface ReserveStockResponse {
-  success: boolean;
-  data: {
-    variantId: string;
-    inventoryCount: number;
-  };
 }
 
 const DEFAULT_LIMIT = 20;
@@ -89,8 +91,40 @@ function buildPlaceholderImage(title: string, subtitle: string): string {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
+function groupProductsById(items: BackendCatalogItem[]): GroupedProduct[] {
+  const grouped = new Map<string, GroupedProduct>();
+
+  items.forEach((item) => {
+    const productId = item.product._id;
+
+    if (!grouped.has(productId)) {
+      grouped.set(productId, {
+        productId,
+        baseName: item.product.baseName,
+        brand: item.product.brand,
+        imagePath: item.product.imagePath,
+        variants: [],
+      });
+    }
+
+    const product = grouped.get(productId)!;
+    product.variants.push({
+      id: item.variant._id,
+      sku: item.variant.sku,
+      price: item.variant.price,
+      inventoryCount: item.variant.inventoryCount,
+      attributes: item.variant.attributes,
+    });
+  });
+
+  return Array.from(grouped.values());
+}
+
 function mapToCatalogCard(item: BackendCatalogItem): CatalogCard {
-  const fallbackImage = buildPlaceholderImage(item.product.baseName, item.product.brand);
+  const fallbackImage = buildPlaceholderImage(
+    item.product.baseName,
+    item.product.brand,
+  );
   const derivedSize =
     item.variant.attributes.size ??
     item.variant.attributes.shoeSize ??
@@ -111,7 +145,6 @@ function mapToCatalogCard(item: BackendCatalogItem): CatalogCard {
     inventoryCount: item.variant.inventoryCount,
     imageUrl: item.product.imagePath ?? fallbackImage,
     attributes: item.variant.attributes,
-    hasUploadedImage: Boolean(item.product.imagePath),
   };
 }
 
@@ -136,27 +169,29 @@ function formatAttributeValue(value: string | number | boolean | null): string {
   return String(value);
 }
 
-function buildCatalogCardDetails(item: CatalogCard): ProductCardDetail[] {
+function buildCatalogCardDetails(
+  variant: VariantOption,
+  weight: number,
+): ProductCardDetail[] {
   const details: ProductCardDetail[] = [
-    { label: "Primary SKU", value: item.sku },
-    { label: "Weight", value: `${item.weight} kg` },
-    { label: "Image", value: item.hasUploadedImage ? "Uploaded" : "Generated" },
+    { label: "SKU", value: variant.sku },
+    { label: "Weight", value: `${weight} kg` },
   ];
 
   const preferredAttributes = ["size", "shoeSize", "gripSize", "color"];
   const includedKeys = new Set<string>();
 
   preferredAttributes.forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(item.attributes, key)) {
+    if (Object.prototype.hasOwnProperty.call(variant.attributes, key)) {
       details.push({
         label: toTitleCase(key),
-        value: formatAttributeValue(item.attributes[key]),
+        value: formatAttributeValue(variant.attributes[key]),
       });
       includedKeys.add(key);
     }
   });
 
-  Object.entries(item.attributes).forEach(([key, value]) => {
+  Object.entries(variant.attributes).forEach(([key, value]) => {
     if (includedKeys.has(key)) {
       return;
     }
@@ -194,7 +229,8 @@ function CatalogSkeletonGrid() {
 
 export function Catalog() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [catalogCards, setCatalogCards] = useState<CatalogCard[]>([]);
+  const [groupedProducts, setGroupedProducts] = useState<GroupedProduct[]>([]);
+  const [allCatalogCards, setAllCatalogCards] = useState<CatalogCard[]>([]);
   const [pagination, setPagination] = useState({
     total: 0,
     page: DEFAULT_PAGE,
@@ -204,10 +240,10 @@ export function Catalog() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const setDisplayedProducts = useAppStore((state) => state.setDisplayedProducts);
-  const setVariantInventoryCount = useAppStore((state) => state.setVariantInventoryCount);
+  const setDisplayedProducts = useAppStore(
+    (state) => state.setDisplayedProducts,
+  );
   const addToCart = useAppStore((state) => state.addToCart);
-  const navigate = useNavigate();
 
   const selectedCategories = useMemo(
     () => normalizeSearchParams(searchParams.getAll("category")),
@@ -232,7 +268,9 @@ export function Catalog() {
       ? selectedCategories.filter((value) => value !== category)
       : [...selectedCategories, category];
 
-    setSearchParams(buildNextParams({ categories: nextCategories }), { replace: true });
+    setSearchParams(buildNextParams({ categories: nextCategories }), {
+      replace: true,
+    });
   };
 
   const clearFilters = (): void => {
@@ -249,7 +287,9 @@ export function Catalog() {
       try {
         const requestParams = new URLSearchParams();
 
-        selectedCategories.forEach((value) => requestParams.append("category", value));
+        selectedCategories.forEach((value) =>
+          requestParams.append("category", value),
+        );
 
         requestParams.set("limit", String(DEFAULT_LIMIT));
         requestParams.set("page", String(DEFAULT_PAGE));
@@ -264,28 +304,37 @@ export function Catalog() {
         }
 
         const nextCards = response.data.data.map(mapToCatalogCard);
-        const nextDisplayedProducts: DisplayedProduct[] = nextCards.map((card) => ({
-          productId: card.productId,
-          variantId: card.variantId,
-          baseName: card.baseName,
-          brand: card.brand,
-          price: card.price,
-          sku: card.sku,
-          size: card.size,
-          color: card.color,
-          weight: card.weight,
-          inventoryCount: card.inventoryCount,
-        }));
+        const grouped = groupProductsById(response.data.data);
 
-        setCatalogCards(nextCards);
+        setAllCatalogCards(nextCards);
+        setGroupedProducts(grouped);
+
+        const nextDisplayedProducts: DisplayedProduct[] = nextCards.map(
+          (card) => ({
+            productId: card.productId,
+            variantId: card.variantId,
+            baseName: card.baseName,
+            brand: card.brand,
+            price: card.price,
+            sku: card.sku,
+            size: card.size,
+            color: card.color,
+            weight: card.weight,
+            inventoryCount: card.inventoryCount,
+          }),
+        );
+
         setDisplayedProducts(nextDisplayedProducts);
+
         setPagination(response.data.pagination);
       } catch (error) {
         if (controller.signal.aborted) {
           return;
         }
 
-        setErrorMessage(error instanceof Error ? error.message : "Failed to load collection.");
+        setErrorMessage(
+          error instanceof Error ? error.message : "Failed to load collection.",
+        );
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -300,30 +349,26 @@ export function Catalog() {
   }, [selectedCategories, setDisplayedProducts]);
 
   const handleAddToCart = async (variantId: string): Promise<void> => {
-    const item = catalogCards.find((catalogCard) => catalogCard.variantId === variantId);
+    const item = allCatalogCards.find(
+      (catalogCard) => catalogCard.variantId === variantId,
+    );
 
     if (!item) {
       return;
     }
 
     try {
-      const response = await api.patch<ReserveStockResponse>(
-        `/products/variants/${variantId}/stock/decrease`,
-        { units: 1 },
-      );
-
-      setVariantInventoryCount(response.data.data.variantId, response.data.data.inventoryCount);
-      addToCart({ ...item, inventoryCount: response.data.data.inventoryCount, quantity: 1 });
+      await addToCart({ ...item, quantity: 1 });
       setErrorMessage(null);
     } catch (error) {
       if (error instanceof AxiosError && error.response?.status === 409) {
-        setVariantInventoryCount(variantId, 0);
-        setErrorMessage("Item is out of stock.");
-        navigate(-1);
+        setErrorMessage("Item is out of stock or insufficient inventory.");
         return;
       }
 
-      setErrorMessage(error instanceof Error ? error.message : "Failed to add item to cart.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to add item to cart.",
+      );
     }
   };
 
@@ -334,8 +379,8 @@ export function Catalog() {
           <div>
             <h1 className="text-3xl font-semibold text-white">Collection</h1>
             <p className="mt-3 max-w-3xl text-slate-300">
-              Filters are persisted in the URL and fetched from the backend with debounce, so fast
-              filter changes stay responsive and shareable.
+              Filters are persisted in the URL and fetched from the backend with
+              debounce, so fast filter changes stay responsive and shareable.
             </p>
           </div>
 
@@ -358,7 +403,11 @@ export function Catalog() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/70 px-5 py-4 text-sm text-slate-300">
             <span>
-              Showing <span className="font-semibold text-white">{catalogCards.length}</span> of {pagination.total} results
+              Showing{" "}
+              <span className="font-semibold text-white">
+                {groupedProducts.length}
+              </span>{" "}
+              of {pagination.total} results
             </span>
 
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-400">
@@ -372,34 +421,86 @@ export function Catalog() {
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-red-100">
               {errorMessage}
             </div>
-          ) : catalogCards.length === 0 ? (
+          ) : groupedProducts.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/15 bg-slate-900/50 p-10 text-center text-slate-300">
               No products match the current filters.
             </div>
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-2">
-                {catalogCards.map((item) => (
-                  <ProductCard
-                    key={item.variantId}
-                    variantId={item.variantId}
-                    productName={item.baseName}
-                    brand={item.brand}
-                    price={item.price}
-                    imageUrl={item.imageUrl}
-                    inventoryCount={item.inventoryCount}
-                    details={buildCatalogCardDetails(item)}
-                    onAddToCart={handleAddToCart}
-                  />
-                ))}
+                {groupedProducts.map((product) => {
+                  const firstVariant = product.variants[0];
+                  const getVariantCard = (
+                    variant: VariantOption | null,
+                  ): CatalogCard | undefined => {
+                    if (!variant) {
+                      return undefined;
+                    }
+
+                    return allCatalogCards.find(
+                      (card) =>
+                        card.productId === product.productId &&
+                        card.variantId === variant.id,
+                    );
+                  };
+
+                  return (
+                    <ProductCard
+                      key={product.productId}
+                      variantId={firstVariant?.id ?? product.productId}
+                      productName={product.baseName}
+                      brand={product.brand}
+                      price={firstVariant?.price ?? 0}
+                      imageUrl={
+                        product.imagePath
+                          ? (() => {
+                              const baseUrl =
+                                import.meta.env.VITE_API_BASE_URL ??
+                                "http://localhost:4000/api";
+                              const backendBase = baseUrl.replace(
+                                /\/api\/?$/,
+                                "",
+                              );
+                              return `${backendBase}/${product.imagePath.startsWith("/") ? product.imagePath.slice(1) : product.imagePath}`;
+                            })()
+                          : buildPlaceholderImage(
+                              product.baseName,
+                              product.brand,
+                            )
+                      }
+                      inventoryCount={firstVariant?.inventoryCount ?? 0}
+                      variants={product.variants}
+                      getDetailsForVariant={(variant) => {
+                        if (!variant) {
+                          return [];
+                        }
+
+                        const matchedCard = getVariantCard(variant);
+
+                        return buildCatalogCardDetails(
+                          variant,
+                          matchedCard?.weight ?? 0,
+                        );
+                      }}
+                      onAddToCart={handleAddToCart}
+                    />
+                  );
+                })}
               </div>
 
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/70 px-5 py-4 text-sm text-slate-300">
                 <span>
-                  Page <span className="font-semibold text-white">{pagination.page}</span> of {pagination.totalPages || 1}
+                  Page{" "}
+                  <span className="font-semibold text-white">
+                    {pagination.page}
+                  </span>{" "}
+                  of {pagination.totalPages || 1}
                 </span>
                 <span>
-                  Limit <span className="font-semibold text-white">{pagination.limit}</span>
+                  Limit{" "}
+                  <span className="font-semibold text-white">
+                    {pagination.limit}
+                  </span>
                 </span>
               </div>
             </>

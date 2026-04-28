@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../services/api.js";
 import { useAppStore } from "../store/useAppStore.js";
 import {
   emptyShippingForm,
@@ -8,16 +13,23 @@ import {
   saveShippingForm,
   type ShippingFormState,
 } from "../services/checkoutStorage.js";
-import { fetchCurrentProfile, updateCurrentProfile } from "../services/account.js";
+import {
+  fetchCurrentProfile,
+  updateCurrentProfile,
+} from "../services/account.js";
 
 type ShippingFormErrors = Partial<Record<keyof ShippingFormState, string>>;
 
-interface ReleaseStockResponse {
-  success: boolean;
-  data: {
-    variantId: string;
-    inventoryCount: number;
-  };
+function normalizeDetailValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
 }
 
 export function Cart() {
@@ -25,23 +37,31 @@ export function Cart() {
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
   const removeFromCart = useAppStore((state) => state.removeFromCart);
   const updateCartQuantity = useAppStore((state) => state.updateCartQuantity);
-  const setVariantInventoryCount = useAppStore((state) => state.setVariantInventoryCount);
   const [shippingForm, setShippingForm] = useState<ShippingFormState>(() => ({
     ...emptyShippingForm,
     ...loadShippingForm(),
   }));
   const [formErrors, setFormErrors] = useState<ShippingFormErrors>({});
   const [isAdjusting, setIsAdjusting] = useState<string | null>(null);
-  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const [hoveredVariantId, setHoveredVariantId] = useState<string | null>(null);
-  const [savedAddress, setSavedAddress] = useState<ShippingFormState | null>(null);
+  const [savedAddress, setSavedAddress] = useState<ShippingFormState | null>(
+    null,
+  );
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [promptDismissed, setPromptDismissed] = useState(false);
   const [saveAddressError, setSaveAddressError] = useState<string | null>(null);
-  const [saveAddressSuccess, setSaveAddressSuccess] = useState<string | null>(null);
+  const [saveAddressSuccess, setSaveAddressSuccess] = useState<string | null>(
+    null,
+  );
   const navigate = useNavigate();
 
-  const cartTotal = shoppingCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartTotal = shoppingCart.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0,
+  );
 
   const canCheckout = shoppingCart.length > 0;
 
@@ -72,7 +92,6 @@ export function Cart() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setSavedAddress(null);
       return;
     }
 
@@ -112,27 +131,27 @@ export function Cart() {
     };
   }, [isAuthenticated]);
 
-  const handleFormChange = (field: keyof ShippingFormState) => (
-    event: ChangeEvent<HTMLInputElement>,
-  ): void => {
-    setShippingForm((current) => {
-      const next = { ...current, [field]: event.target.value };
-      saveShippingForm(next);
-      setPromptDismissed(false);
-      setSaveAddressSuccess(null);
-      return next;
-    });
+  const handleFormChange =
+    (field: keyof ShippingFormState) =>
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      setShippingForm((current) => {
+        const next = { ...current, [field]: event.target.value };
+        saveShippingForm(next);
+        setPromptDismissed(false);
+        setSaveAddressSuccess(null);
+        return next;
+      });
 
-    setFormErrors((current) => {
-      if (!current[field]) {
-        return current;
-      }
+      setFormErrors((current) => {
+        if (!current[field]) {
+          return current;
+        }
 
-      const next = { ...current };
-      delete next[field];
-      return next;
-    });
-  };
+        const next = { ...current };
+        delete next[field];
+        return next;
+      });
+    };
 
   const validateShippingForm = (): ShippingFormErrors => {
     const errors: ShippingFormErrors = {};
@@ -192,7 +211,9 @@ export function Cart() {
 
     try {
       setSaveAddressError(null);
-      const updatedProfile = await updateCurrentProfile({ savedShippingAddress: shippingForm });
+      const updatedProfile = await updateCurrentProfile({
+        savedShippingAddress: shippingForm,
+      });
       if (updatedProfile.savedShippingAddress) {
         setSavedAddress(updatedProfile.savedShippingAddress);
         saveShippingForm(updatedProfile.savedShippingAddress);
@@ -200,7 +221,9 @@ export function Cart() {
       setSaveAddressSuccess("Your permanent address has been saved.");
       setPromptDismissed(true);
     } catch (error) {
-      setSaveAddressError(error instanceof Error ? error.message : "Could not save address.");
+      setSaveAddressError(
+        error instanceof Error ? error.message : "Could not save address.",
+      );
     }
   };
 
@@ -235,35 +258,11 @@ export function Cart() {
       setIsAdjusting(variantId);
 
       if (targetQuantity === 0) {
-        const response = await api.patch<ReleaseStockResponse>(
-          `/products/variants/${variantId}/stock/release`,
-          { units: cartItem.quantity },
-        );
-
-        setVariantInventoryCount(response.data.data.variantId, response.data.data.inventoryCount);
-        removeFromCart(variantId);
+        await removeFromCart(variantId);
         return;
       }
 
-      if (targetQuantity > cartItem.quantity) {
-        const delta = targetQuantity - cartItem.quantity;
-        const response = await api.patch<ReleaseStockResponse>(
-          `/products/variants/${variantId}/stock/decrease`,
-          { units: delta },
-        );
-
-        setVariantInventoryCount(response.data.data.variantId, response.data.data.inventoryCount);
-      } else {
-        const delta = cartItem.quantity - targetQuantity;
-        const response = await api.patch<ReleaseStockResponse>(
-          `/products/variants/${variantId}/stock/release`,
-          { units: delta },
-        );
-
-        setVariantInventoryCount(response.data.data.variantId, response.data.data.inventoryCount);
-      }
-
-      updateCartQuantity(variantId, targetQuantity);
+      await updateCartQuantity(variantId, targetQuantity);
     } finally {
       setQuantityDrafts((current) => {
         if (!(variantId in current)) {
@@ -278,11 +277,17 @@ export function Cart() {
     }
   };
 
-  const handleQuantityInputChange = (variantId: string, value: string): void => {
+  const handleQuantityInputChange = (
+    variantId: string,
+    value: string,
+  ): void => {
     setQuantityDrafts((current) => ({ ...current, [variantId]: value }));
   };
 
-  const resolveDisplayQuantity = (variantId: string, actualQuantity: number): string => {
+  const resolveDisplayQuantity = (
+    variantId: string,
+    actualQuantity: number,
+  ): string => {
     return quantityDrafts[variantId] ?? String(actualQuantity);
   };
 
@@ -291,7 +296,8 @@ export function Cart() {
       <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-8">
         <h1 className="text-3xl font-semibold text-white">Cart</h1>
         <p className="mt-3 max-w-3xl text-slate-300">
-          Review your order, confirm shipping details, and preview the final total before checkout.
+          Review your order, confirm shipping details, and preview the final
+          total before checkout.
         </p>
       </div>
 
@@ -307,7 +313,9 @@ export function Cart() {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
                   Shipping Details
                 </p>
-                <h2 className="mt-2 text-xl font-semibold text-white">Where should we deliver?</h2>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  Where should we deliver?
+                </h2>
               </div>
 
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-400">
@@ -317,9 +325,12 @@ export function Cart() {
 
             {!isAuthenticated ? (
               <div className="mt-6 rounded-2xl border border-dashed border-white/15 bg-slate-950/40 p-6 text-slate-300">
-                <p className="text-sm font-medium text-white">Please log in to continue checkout.</p>
+                <p className="text-sm font-medium text-white">
+                  Please log in to continue checkout.
+                </p>
                 <p className="mt-2 text-sm text-slate-400">
-                  Only logged-in users can access the shipping form and save addresses for future purchases.
+                  Only logged-in users can access the shipping form and save
+                  addresses for future purchases.
                 </p>
                 <div className="mt-4">
                   <button
@@ -338,18 +349,24 @@ export function Cart() {
                 Loading your saved address...
               </div>
             ) : (
-              <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
+              <form
+                className="mt-6 grid gap-4 md:grid-cols-2"
+                onSubmit={handleSubmit}
+              >
                 <label className="space-y-2 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-300">Email</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    Email
+                  </span>
                   <input
                     type="email"
                     value={shippingForm.email}
                     onChange={handleFormChange("email")}
                     aria-invalid={Boolean(formErrors.email)}
-                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${formErrors.email
-                      ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
-                      : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
-                      }`}
+                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${
+                      formErrors.email
+                        ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
+                        : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
+                    }`}
                     placeholder="customer@example.com"
                   />
                   {formErrors.email ? (
@@ -358,25 +375,32 @@ export function Cart() {
                 </label>
 
                 <label className="space-y-2 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-300">Street Address</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    Street Address
+                  </span>
                   <input
                     type="text"
                     value={shippingForm.streetLine1}
                     onChange={handleFormChange("streetLine1")}
                     aria-invalid={Boolean(formErrors.streetLine1)}
-                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${formErrors.streetLine1
-                      ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
-                      : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
-                      }`}
+                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${
+                      formErrors.streetLine1
+                        ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
+                        : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
+                    }`}
                     placeholder="123 Market Street"
                   />
                   {formErrors.streetLine1 ? (
-                    <p className="text-xs text-red-300">{formErrors.streetLine1}</p>
+                    <p className="text-xs text-red-300">
+                      {formErrors.streetLine1}
+                    </p>
                   ) : null}
                 </label>
 
                 <label className="space-y-2 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-300">Apartment, suite, etc.</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    Apartment, suite, etc.
+                  </span>
                   <input
                     type="text"
                     value={shippingForm.streetLine2}
@@ -387,16 +411,19 @@ export function Cart() {
                 </label>
 
                 <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-300">City</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    City
+                  </span>
                   <input
                     type="text"
                     value={shippingForm.city}
                     onChange={handleFormChange("city")}
                     aria-invalid={Boolean(formErrors.city)}
-                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${formErrors.city
-                      ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
-                      : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
-                      }`}
+                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${
+                      formErrors.city
+                        ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
+                        : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
+                    }`}
                     placeholder="Austin"
                   />
                   {formErrors.city ? (
@@ -405,16 +432,19 @@ export function Cart() {
                 </label>
 
                 <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-300">State / Province</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    State / Province
+                  </span>
                   <input
                     type="text"
                     value={shippingForm.state}
                     onChange={handleFormChange("state")}
                     aria-invalid={Boolean(formErrors.state)}
-                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${formErrors.state
-                      ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
-                      : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
-                      }`}
+                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${
+                      formErrors.state
+                        ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
+                        : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
+                    }`}
                     placeholder="Texas"
                   />
                   {formErrors.state ? (
@@ -423,34 +453,42 @@ export function Cart() {
                 </label>
 
                 <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-300">Postal Code</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    Postal Code
+                  </span>
                   <input
                     type="text"
                     value={shippingForm.postalCode}
                     onChange={handleFormChange("postalCode")}
                     aria-invalid={Boolean(formErrors.postalCode)}
-                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${formErrors.postalCode
-                      ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
-                      : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
-                      }`}
+                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${
+                      formErrors.postalCode
+                        ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
+                        : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
+                    }`}
                     placeholder="78701"
                   />
                   {formErrors.postalCode ? (
-                    <p className="text-xs text-red-300">{formErrors.postalCode}</p>
+                    <p className="text-xs text-red-300">
+                      {formErrors.postalCode}
+                    </p>
                   ) : null}
                 </label>
 
                 <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-300">Country</span>
+                  <span className="text-sm font-medium text-slate-300">
+                    Country
+                  </span>
                   <input
                     type="text"
                     value={shippingForm.country}
                     onChange={handleFormChange("country")}
                     aria-invalid={Boolean(formErrors.country)}
-                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${formErrors.country
-                      ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
-                      : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
-                      }`}
+                    className={`w-full rounded-xl border bg-slate-950/60 px-4 py-3 text-slate-100 outline-none transition focus:ring-2 ${
+                      formErrors.country
+                        ? "border-red-400/60 focus:border-red-400/60 focus:ring-red-400/20"
+                        : "border-white/10 focus:border-cyan-400/50 focus:ring-cyan-400/20"
+                    }`}
                     placeholder="United States"
                   />
                   {formErrors.country ? (
@@ -462,10 +500,11 @@ export function Cart() {
                   <button
                     type="submit"
                     disabled={!canCheckout}
-                    className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${canCheckout
-                      ? "bg-cyan-400 text-slate-950 hover:bg-cyan-300"
-                      : "cursor-not-allowed bg-slate-700 text-slate-400"
-                      }`}
+                    className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${
+                      canCheckout
+                        ? "bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+                        : "cursor-not-allowed bg-slate-700 text-slate-400"
+                    }`}
                   >
                     Proceed to Checkout
                   </button>
@@ -473,17 +512,26 @@ export function Cart() {
               </form>
             )}
 
-            {isAuthenticated && isAddressComplete && addressNeedsSaving && !promptDismissed ? (
+            {isAuthenticated &&
+            isAddressComplete &&
+            addressNeedsSaving &&
+            !promptDismissed ? (
               <div className="fixed bottom-4 right-4 z-50 w-[320px] rounded-2xl border border-cyan-400/30 bg-slate-950/95 p-4 shadow-2xl shadow-slate-950/80 backdrop-blur">
-                <p className="text-sm font-semibold text-white">Save this as your permanent address?</p>
+                <p className="text-sm font-semibold text-white">
+                  Save this as your permanent address?
+                </p>
                 <p className="mt-2 text-xs text-slate-300">
                   You can reuse it next time without retyping.
                 </p>
                 {saveAddressError ? (
-                  <p className="mt-2 text-xs text-red-300">{saveAddressError}</p>
+                  <p className="mt-2 text-xs text-red-300">
+                    {saveAddressError}
+                  </p>
                 ) : null}
                 {saveAddressSuccess ? (
-                  <p className="mt-2 text-xs text-emerald-300">{saveAddressSuccess}</p>
+                  <p className="mt-2 text-xs text-emerald-300">
+                    {saveAddressSuccess}
+                  </p>
                 ) : null}
                 <div className="mt-4 flex items-center justify-end gap-2">
                   <button
@@ -511,16 +559,19 @@ export function Cart() {
 
           <aside className="order-1 space-y-3 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/30">
             <div className="border-b border-white/10 pb-4">
-              <h2 className="text-xl font-semibold text-white">Items in Order</h2>
+              <h2 className="text-xl font-semibold text-white">
+                Items in Order
+              </h2>
             </div>
 
             <div className="space-y-2 pt-2">
               <div>
                 {shoppingCart.map((item) => {
-                  const itemDetails = [item.brand, item.size, item.color].filter(
-                    (value) => value.trim() !== "-" && value.trim() !== "",
-                  );
-                  const detailsText = itemDetails.join(" - ") || "Product details unavailable";
+                  const itemDetails = [item.brand, item.size, item.color]
+                    .map((value) => normalizeDetailValue(value))
+                    .filter((value) => value !== "-" && value !== "");
+                  const detailsText =
+                    itemDetails.join(" - ") || "Product details unavailable";
 
                   const draftQuantity = resolveDisplayQuantity(
                     item.variantId,
@@ -547,7 +598,7 @@ export function Cart() {
                             }}
                           >
                             <p className="cursor-default break-words text-sm font-semibold leading-snug text-white">
-                              {item.baseName}
+                              {item.sku}
                             </p>
                             {hoveredVariantId === item.variantId ? (
                               <div className="pointer-events-none absolute left-0 z-20 w-max max-w-[260px] rounded-lg border border-white/15 bg-slate-950/95 px-3 py-2 text-xs uppercase tracking-[0.12em] text-slate-200 shadow-lg shadow-slate-950/70 top-full mt-1 md:top-auto md:bottom-full md:mb-1 md:mt-0">
@@ -558,14 +609,20 @@ export function Cart() {
                         </div>
 
                         <div className="w-[112px]">
-                          <label className="sr-only" htmlFor={`qty-${item.variantId}`}>
+                          <label
+                            className="sr-only"
+                            htmlFor={`qty-${item.variantId}`}
+                          >
                             Quantity
                           </label>
                           <div className="relative">
                             <button
                               type="button"
                               onClick={() => {
-                                void handleAdjustQuantity(item.variantId, item.quantity - 1);
+                                void handleAdjustQuantity(
+                                  item.variantId,
+                                  item.quantity - 1,
+                                );
                               }}
                               disabled={isBusy || item.quantity <= 0}
                               className="absolute left-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md border border-white/15 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -581,23 +638,38 @@ export function Cart() {
                               step={1}
                               value={draftQuantity}
                               onChange={(event) => {
-                                handleQuantityInputChange(item.variantId, event.target.value);
+                                handleQuantityInputChange(
+                                  item.variantId,
+                                  event.target.value,
+                                );
                               }}
                               onBlur={() => {
                                 const parsed = Number.parseInt(
-                                  resolveDisplayQuantity(item.variantId, item.quantity),
+                                  resolveDisplayQuantity(
+                                    item.variantId,
+                                    item.quantity,
+                                  ),
                                   10,
                                 );
-                                void handleAdjustQuantity(item.variantId, parsed);
+                                void handleAdjustQuantity(
+                                  item.variantId,
+                                  parsed,
+                                );
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === "Enter") {
                                   event.preventDefault();
                                   const parsed = Number.parseInt(
-                                    resolveDisplayQuantity(item.variantId, item.quantity),
+                                    resolveDisplayQuantity(
+                                      item.variantId,
+                                      item.quantity,
+                                    ),
                                     10,
                                   );
-                                  void handleAdjustQuantity(item.variantId, parsed);
+                                  void handleAdjustQuantity(
+                                    item.variantId,
+                                    parsed,
+                                  );
                                 }
                               }}
                               disabled={isBusy}
@@ -607,7 +679,10 @@ export function Cart() {
                             <button
                               type="button"
                               onClick={() => {
-                                void handleAdjustQuantity(item.variantId, item.quantity + 1);
+                                void handleAdjustQuantity(
+                                  item.variantId,
+                                  item.quantity + 1,
+                                );
                               }}
                               disabled={isBusy}
                               className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md border border-white/15 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -629,7 +704,9 @@ export function Cart() {
 
               <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
                 <p className="text-sm font-medium text-slate-300">Total</p>
-                <p className="text-base font-semibold text-cyan-300">${cartTotal.toFixed(2)}</p>
+                <p className="text-base font-semibold text-cyan-300">
+                  ${cartTotal.toFixed(2)}
+                </p>
               </div>
             </div>
           </aside>

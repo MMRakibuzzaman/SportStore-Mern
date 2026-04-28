@@ -1,8 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
 import { AdminLayout } from "./components/AdminLayout.tsx";
 import { Layout } from "./components/Layout.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
 import { useInventorySocket } from "./hooks/useInventorySocket.ts";
+import { useCartWebSocket } from "./hooks/useCartWebSocket.ts";
 import { AdminInventory } from "./pages/AdminInventory.tsx";
 import { AdminOrders } from "./pages/AdminOrders.tsx";
 import { AdminUsers } from "./pages/AdminUsers.tsx";
@@ -16,6 +18,7 @@ import { Checkout } from "./pages/Checkout.tsx";
 import { Home } from "./pages/Home.tsx";
 import { Login } from "./pages/Login.tsx";
 import { Invoice } from "./pages/Invoice.tsx";
+import { PrintableInvoice } from "./pages/PrintableInvoice.tsx";
 import { MyOrders } from "./pages/MyOrders.tsx";
 import { Register } from "./pages/Register.tsx";
 import { AuthenticatedRoute } from "./components/AuthenticatedRoute.tsx";
@@ -23,11 +26,20 @@ import { useAppStore } from "./store/useAppStore.js";
 
 function App() {
   useInventorySocket();
+  useCartWebSocket();
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
+  const loadCart = useAppStore((state) => state.loadCart);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      void loadCart();
+    }
+  }, [isAuthenticated, loadCart]);
 
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/invoice/print" element={<PrintableInvoice />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="catalog" element={<Catalog />} />
@@ -39,7 +51,9 @@ function App() {
           </Route>
           <Route
             path="login"
-            element={isAuthenticated ? <Navigate replace to="/catalog" /> : <Login />}
+            element={
+              isAuthenticated ? <Navigate replace to="/catalog" /> : <Login />
+            }
           />
           <Route path="register" element={<Register />} />
 

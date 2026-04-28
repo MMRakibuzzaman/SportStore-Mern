@@ -1,6 +1,7 @@
 import type { ProductDocument } from "../models/product.model.js";
 import type { VariantAttributes, VariantDocument } from "../models/variant.model.js";
 import { ProductRepository } from "../repositories/product.repository.js";
+import { CartRepository } from "../repositories/cart.repository.js";
 import { productVariantInputSchema, type CreateProductPayload, type ProductVariantInput, type UpdateProductPayload } from "../validation/product.validation.js";
 import type {
   ProductCatalogFilters,
@@ -12,7 +13,10 @@ import type { CreateVariantPayload, UpdateVariantPayload } from "../validation/v
 import { z } from "zod";
 
 export class ProductService {
-  constructor(private readonly productRepository: ProductRepository = new ProductRepository()) { }
+  constructor(
+    private readonly productRepository: ProductRepository = new ProductRepository(),
+    private readonly cartRepository: CartRepository = new CartRepository(),
+  ) { }
 
   async getProductById(productId: string): Promise<ProductDocument> {
     this.assertObjectId(productId, "productId");
@@ -203,6 +207,20 @@ export class ProductService {
         existingVariants.map((variant) => [variant.sku.toUpperCase(), variant]),
       );
 
+      const submittedSkus = new Set(submittedVariants.map((v) => v.sku.toUpperCase()));
+      const variantsToDelete: string[] = [];
+
+      for (const existingVariant of existingVariants) {
+        if (!submittedSkus.has(existingVariant.sku.toUpperCase())) {
+          variantsToDelete.push(existingVariant._id.toString());
+        }
+      }
+
+      if (variantsToDelete.length > 0) {
+        await this.productRepository.deleteVariantsByIds(variantsToDelete);
+        await this.cartRepository.removeItemsByVariantIds(variantsToDelete);
+      }
+
       for (const submittedVariant of submittedVariants) {
         const matchingVariant = variantsBySku.get(submittedVariant.sku.toUpperCase());
 
@@ -234,6 +252,21 @@ export class ProductService {
   async deleteProduct(productId: string): Promise<void> {
     this.assertObjectId(productId, "id");
 
+    const existingProduct = await this.productRepository.findProductById(productId);
+
+    if (!existingProduct) {
+      throw this.buildError("Product not found", 404);
+    }
+
+    const variantsToDelete = await this.productRepository.findVariantsByProductId(productId);
+    const variantIds = variantsToDelete.map((v) => v._id.toString());
+
+    await this.productRepository.deleteVariantsByProductId(productId);
+
+    if (variantIds.length > 0) {
+      await this.cartRepository.removeItemsByVariantIds(variantIds);
+    }
+
     const deletedProduct = await this.productRepository.deleteProductById(productId);
 
     if (!deletedProduct) {
@@ -248,7 +281,7 @@ export class ProductService {
   async createVariant(payload: CreateVariantPayload): Promise<VariantDocument> {
     await this.getProductById(payload.product);
 
-    const existingVariant = await this.productRepository.findVariantBySku(payload.sku);
+    const existingVariant = await this.productRepository.findVariantBySku(payload.sku, payload.product);
 
     if (existingVariant) {
       throw this.buildError("A variant with this SKU already exists", 409);
@@ -260,12 +293,21 @@ export class ProductService {
   async updateVariant(variantId: string, payload: UpdateVariantPayload): Promise<VariantDocument> {
     this.assertObjectId(variantId, "id");
 
+    const existingTargetVariant = await this.productRepository.findVariantById(variantId);
+
+    if (!existingTargetVariant) {
+      throw this.buildError("Variant not found", 404);
+    }
+
     if (Object.keys(payload).length === 0) {
       throw this.buildError("No variant fields were provided for update", 400);
     }
 
     if (payload.sku) {
-      const existingVariant = await this.productRepository.findVariantBySku(payload.sku);
+      const existingVariant = await this.productRepository.findVariantBySku(
+        payload.sku,
+        existingTargetVariant.product.toString(),
+      );
 
       if (existingVariant && existingVariant._id.toString() !== variantId) {
         throw this.buildError("A variant with this SKU already exists", 409);
@@ -317,6 +359,8 @@ export class ProductService {
     if (!deletedVariant) {
       throw this.buildError("Variant not found", 404);
     }
+
+    await this.cartRepository.removeItemsByVariantIds([variantId]);
   }
 
   private assertObjectId(id: string, field: string): void {

@@ -3,8 +3,8 @@ import bcrypt from "bcrypt";
 import { connectToDatabase, disconnectFromDatabase } from "../src/config/database.js";
 import { User } from "../src/models/user.model.js";
 
-const ADMIN_EMAIL = "admin@sportsstore.com";
-const DEFAULT_ADMIN_PASSWORD = "SportStore_Admin#2026";
+const ADMIN_EMAIL = "Admin@gmail.com";
+const DEFAULT_ADMIN_PASSWORD = "Admin@gmail.com";
 
 function getAdminPassword(): string {
   const password = process.env.ADMIN_SEED_PASSWORD?.trim();

@@ -5,6 +5,7 @@ import type { LoginPayload } from "../validation/auth.validation.js";
 export type UserRole = "customer" | "admin";
 
 export interface AuthUser {
+  id: string;
   email: string;
   role: UserRole;
 }
@@ -17,6 +18,7 @@ interface AuthSlice {
 interface LoginResponse {
   success: boolean;
   data: {
+    id: string;
     email: string;
     role: UserRole;
   };
@@ -39,24 +41,32 @@ export interface CartItem extends DisplayedProduct {
   quantity: number;
 }
 
+export interface CartDto {
+  items: CartItem[];
+  itemCount: number;
+  totalPrice: number;
+}
+
 interface AppState {
   auth: AuthSlice;
   shoppingCart: CartItem[];
   displayedProducts: DisplayedProduct[];
+  isLoadingCart: boolean;
   loginUser: (payload: LoginPayload) => Promise<AuthUser>;
   logoutUser: () => void;
   setAuthUser: (user: AuthUser | null) => void;
   setDisplayedProducts: (products: DisplayedProduct[]) => void;
   clearDisplayedProducts: () => void;
   setVariantInventoryCount: (variantId: string, inventoryCount: number) => void;
-  addToCart: (item: CartItem) => void;
-  removeFromCart: (variantId: string) => void;
-  clearCart: () => void;
-  updateCartQuantity: (variantId: string, quantity: number) => void;
+  loadCart: () => Promise<void>;
+  addToCart: (item: Omit<CartItem, "quantity"> & { quantity: number }) => Promise<CartDto>;
+  removeFromCart: (variantId: string) => Promise<CartDto>;
+  clearCart: () => Promise<CartDto>;
+  updateCartQuantity: (variantId: string, quantity: number) => Promise<CartDto>;
+  setShoppingCart: (cart: CartItem[]) => void;
 }
 
 const AUTH_STORAGE_KEY = "sportstore.auth";
-const CART_STORAGE_KEY = "sportstore.cart";
 const INVENTORY_STORAGE_KEY = "sportstore.inventory";
 
 interface PersistedInventoryUpdate {
@@ -81,11 +91,13 @@ function getInitialAuthState(): AuthSlice {
 
     if (
       parsed.user &&
+      typeof parsed.user.id === "string" &&
       typeof parsed.user.email === "string" &&
       (parsed.user.role === "customer" || parsed.user.role === "admin")
     ) {
       return {
         user: {
+          id: parsed.user.id,
           email: parsed.user.email,
           role: parsed.user.role,
         },
@@ -99,36 +111,6 @@ function getInitialAuthState(): AuthSlice {
   return { user: null, isAuthenticated: false };
 }
 
-function getInitialCartState(): CartItem[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  const raw = window.localStorage.getItem(CART_STORAGE_KEY);
-
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-
-    if (Array.isArray(parsed)) {
-      return parsed.filter(
-        (item): item is CartItem =>
-          item &&
-          typeof item === "object" &&
-          typeof (item as CartItem).variantId === "string" &&
-          typeof (item as CartItem).quantity === "number",
-      );
-    }
-  } catch {
-    // Ignore malformed persisted cart state and reset to a clean default.
-  }
-
-  return [];
-}
-
 function persistAuthState(auth: AuthSlice): void {
   if (typeof window === "undefined") {
     return;
@@ -140,14 +122,6 @@ function persistAuthState(auth: AuthSlice): void {
   }
 
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
-}
-
-function persistCartState(cart: CartItem[]): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
 }
 
 function persistInventoryUpdate(variantId: string, inventoryCount: number): void {
@@ -165,31 +139,37 @@ function persistInventoryUpdate(variantId: string, inventoryCount: number): void
 }
 
 export const useAppStore = create<AppState>((set) => {
-  // Listen for storage events (cart changes from other tabs/windows)
+  // Listen for storage events (auth changes from other tabs/windows)
   if (typeof window !== "undefined") {
     window.addEventListener("storage", (event) => {
-      if (event.key === CART_STORAGE_KEY) {
+      if (event.key === AUTH_STORAGE_KEY) {
         if (!event.newValue) {
-          set({ shoppingCart: [] });
+          set({ auth: { user: null, isAuthenticated: false } });
           return;
         }
 
         try {
-          const parsed = JSON.parse(event.newValue) as unknown;
+          const parsed = JSON.parse(event.newValue) as Partial<AuthSlice>;
 
-          if (Array.isArray(parsed)) {
-            const newCart = parsed.filter(
-              (item): item is CartItem =>
-                item &&
-                typeof item === "object" &&
-                typeof (item as CartItem).variantId === "string" &&
-                typeof (item as CartItem).quantity === "number",
-            );
-
-            set({ shoppingCart: newCart });
+          if (
+            parsed.user &&
+            typeof parsed.user.id === "string" &&
+            typeof parsed.user.email === "string" &&
+            (parsed.user.role === "customer" || parsed.user.role === "admin")
+          ) {
+            set({
+              auth: {
+                user: {
+                  id: parsed.user.id,
+                  email: parsed.user.email,
+                  role: parsed.user.role,
+                },
+                isAuthenticated: true,
+              },
+            });
           }
         } catch {
-          // Ignore malformed cart data
+          // Ignore malformed auth data
         }
 
         return;
@@ -225,12 +205,14 @@ export const useAppStore = create<AppState>((set) => {
 
   return {
     auth: getInitialAuthState(),
-    shoppingCart: getInitialCartState(),
+    shoppingCart: [],
     displayedProducts: [],
+    isLoadingCart: false,
     loginUser: async (payload) => {
       const response = await api.post<LoginResponse>("/auth/login", payload);
 
       const nextUser: AuthUser = {
+        id: response.data.data.id,
         email: response.data.data.email,
         role: response.data.data.role,
       };
@@ -277,46 +259,65 @@ export const useAppStore = create<AppState>((set) => {
           ),
         };
       }),
-    addToCart: (item) =>
-      set((state) => {
-        const existingItemIndex = state.shoppingCart.findIndex(
-          (cartItem) => cartItem.variantId === item.variantId,
-        );
-
-        let updatedCart: CartItem[];
-
-        if (existingItemIndex === -1) {
-          updatedCart = [...state.shoppingCart, item];
-        } else {
-          updatedCart = [...state.shoppingCart];
-          updatedCart[existingItemIndex] = {
-            ...updatedCart[existingItemIndex],
-            quantity: updatedCart[existingItemIndex].quantity + item.quantity,
-          };
-        }
-
-        persistCartState(updatedCart);
-        return { shoppingCart: updatedCart };
-      }),
-    removeFromCart: (variantId) =>
-      set((state) => {
-        const updatedCart = state.shoppingCart.filter(
-          (item) => item.variantId !== variantId,
-        );
-        persistCartState(updatedCart);
-        return { shoppingCart: updatedCart };
-      }),
-    clearCart: () => {
-      persistCartState([]);
-      set({ shoppingCart: [] });
+    loadCart: async () => {
+      try {
+        set({ isLoadingCart: true });
+        const response = await api.get<{ success: boolean; data: CartDto }>("/cart");
+        set({ shoppingCart: response.data.data.items });
+      } catch (error) {
+        console.error("Failed to load cart", error);
+      } finally {
+        set({ isLoadingCart: false });
+      }
     },
-    updateCartQuantity: (variantId, quantity) =>
-      set((state) => {
-        const updatedCart = state.shoppingCart.map((item) =>
-          item.variantId === variantId ? { ...item, quantity } : item,
+    addToCart: async (item) => {
+      try {
+        const response = await api.post<{ success: boolean; data: CartDto }>("/cart/add", {
+          variantId: item.variantId,
+          quantity: item.quantity,
+        });
+        set({ shoppingCart: response.data.data.items });
+        return response.data.data;
+      } catch (error) {
+        console.error("Failed to add to cart", error);
+        throw error;
+      }
+    },
+    removeFromCart: async (variantId) => {
+      try {
+        const response = await api.delete<{ success: boolean; data: CartDto }>(
+          `/cart/${variantId}`,
         );
-        persistCartState(updatedCart);
-        return { shoppingCart: updatedCart };
-      }),
+        set({ shoppingCart: response.data.data.items });
+        return response.data.data;
+      } catch (error) {
+        console.error("Failed to remove from cart", error);
+        throw error;
+      }
+    },
+    clearCart: async () => {
+      try {
+        const response = await api.delete<{ success: boolean; data: CartDto }>("/cart");
+        set({ shoppingCart: [] });
+        return response.data.data;
+      } catch (error) {
+        console.error("Failed to clear cart", error);
+        throw error;
+      }
+    },
+    updateCartQuantity: async (variantId, quantity) => {
+      try {
+        const response = await api.patch<{ success: boolean; data: CartDto }>(
+          `/cart/${variantId}`,
+          { quantity },
+        );
+        set({ shoppingCart: response.data.data.items });
+        return response.data.data;
+      } catch (error) {
+        console.error("Failed to update cart item", error);
+        throw error;
+      }
+    },
+    setShoppingCart: (cart) => set({ shoppingCart: cart }),
   };
 });

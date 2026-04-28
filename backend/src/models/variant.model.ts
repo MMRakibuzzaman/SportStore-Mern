@@ -26,7 +26,6 @@ const variantSchema = new Schema<IVariant, VariantModel>(
     sku: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       uppercase: true,
       minlength: 3,
@@ -65,6 +64,8 @@ const variantSchema = new Schema<IVariant, VariantModel>(
     versionKey: false,
   },
 );
+
+variantSchema.index({ product: 1, sku: 1 }, { unique: true, name: "product_1_sku_1" });
 
 export const Variant =
   (globalThis as typeof globalThis & { VariantModel?: VariantModel }).VariantModel ??

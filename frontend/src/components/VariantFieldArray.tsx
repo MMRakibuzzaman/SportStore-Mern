@@ -1,4 +1,8 @@
-import { useFieldArray, type Control, type UseFormRegister } from "react-hook-form";
+import {
+  useFieldArray,
+  type Control,
+  type UseFormRegister,
+} from "react-hook-form";
 import { categoryConfig } from "../constants/categoryConfig.js";
 import type {
   AdminProductFormValues,
@@ -13,19 +17,26 @@ function toAttributeKey(name: string): string {
     .split(/\s+/)
     .map((segment, index) => {
       const lower = segment.toLowerCase();
-      return index === 0 ? lower : lower.charAt(0).toUpperCase() + lower.slice(1);
+      return index === 0
+        ? lower
+        : lower.charAt(0).toUpperCase() + lower.slice(1);
     })
     .join("");
 }
 
-function buildDefaultAttributes(category: ProductCategory): Record<string, string | number> {
+function buildDefaultAttributes(
+  category: ProductCategory,
+): Record<string, string | number> {
   const fields = categoryConfig[category] ?? [];
 
-  return fields.reduce<Record<string, string | number>>((accumulator, field) => {
-    const key = toAttributeKey(field.name);
-    accumulator[key] = field.type === "number" ? 0 : "";
-    return accumulator;
-  }, {});
+  return fields.reduce<Record<string, string | number>>(
+    (accumulator, field) => {
+      const key = toAttributeKey(field.name);
+      accumulator[key] = field.type === "number" ? 0 : "";
+      return accumulator;
+    },
+    {},
+  );
 }
 
 function createEmptyVariant(): AdminProductVariantInput {
@@ -59,7 +70,9 @@ export function VariantFieldArray({
   return (
     <div className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">Variants</h4>
+        <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
+          Variants
+        </h4>
         <button
           type="button"
           onClick={() =>
@@ -76,9 +89,14 @@ export function VariantFieldArray({
 
       <div className="space-y-4">
         {fields.map((field, index) => (
-          <article key={field.id} className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+          <article
+            key={field.id}
+            className="rounded-xl border border-white/10 bg-slate-900/60 p-4"
+          >
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-white">Variant {index + 1}</p>
+              <p className="text-sm font-semibold text-white">
+                Variant {index + 1}
+              </p>
               {fields.length > 1 ? (
                 <button
                   type="button"
@@ -92,7 +110,9 @@ export function VariantFieldArray({
 
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1">
-                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">SKU</span>
+                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">
+                  SKU
+                </span>
                 <input
                   type="text"
                   {...register(`variants.${index}.sku`)}
@@ -102,11 +122,15 @@ export function VariantFieldArray({
               </label>
 
               <label className="space-y-1">
-                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">Price</span>
+                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">
+                  Price
+                </span>
                 <input
                   type="number"
                   step="0.01"
-                  {...register(`variants.${index}.price`, { valueAsNumber: true })}
+                  {...register(`variants.${index}.price`, {
+                    valueAsNumber: true,
+                  })}
                   className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/50"
                   placeholder="129.99"
                 />
@@ -114,7 +138,8 @@ export function VariantFieldArray({
 
               {categoryFields.map((attribute) => {
                 const key = toAttributeKey(attribute.name);
-                const inputPath = `variants.${index}.attributes.${key}` as const;
+                const inputPath =
+                  `variants.${index}.attributes.${key}` as const;
 
                 return (
                   <label key={`${field.id}-${key}`} className="space-y-1">
@@ -152,22 +177,33 @@ export function VariantFieldArray({
                 );
               })}
 
-              <label className="space-y-1">
-                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">Weight (kg)</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  {...register(`variants.${index}.weight`, { valueAsNumber: true })}
-                  className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/50"
-                  placeholder="0.46"
-                />
-              </label>
+              {selectedCategory !== "Cricket Bat" &&
+              selectedCategory !== "Tennis Racket" ? (
+                <label className="space-y-1">
+                  <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">
+                    Weight (kg)
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    {...register(`variants.${index}.weight`, {
+                      valueAsNumber: true,
+                    })}
+                    className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/50"
+                    placeholder="0.46"
+                  />
+                </label>
+              ) : null}
 
               <label className="space-y-1">
-                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">Inventory Count</span>
+                <span className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">
+                  Inventory Count
+                </span>
                 <input
                   type="number"
-                  {...register(`variants.${index}.inventoryCount`, { valueAsNumber: true })}
+                  {...register(`variants.${index}.inventoryCount`, {
+                    valueAsNumber: true,
+                  })}
                   className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/50"
                   placeholder="24"
                 />

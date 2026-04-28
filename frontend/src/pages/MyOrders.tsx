@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { fetchMyOrders, type MyOrderListItem } from "../services/order.js";
+import { saveOrderInvoice } from "../services/checkoutStorage.js";
 
 export function MyOrders() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<MyOrderListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -36,6 +39,21 @@ export function MyOrders() {
       controller.abort();
     };
   }, []);
+
+  const handleViewInvoice = (order: MyOrderListItem): void => {
+    const invoiceData = {
+      orderId: order.id,
+      createdAt: order.createdAt,
+      shippingAddress: order.shippingAddress,
+      items: order.items,
+      orderStatus: order.orderStatus,
+      orderTotal: order.totalCost,
+      email: order.email,
+    };
+
+    saveOrderInvoice(invoiceData);
+    navigate(`/invoice/print?orderId=${order.id}`);
+  };
 
   return (
     <section className="space-y-6">
@@ -122,6 +140,14 @@ export function MyOrders() {
                     <p className="mt-1 text-base font-semibold text-cyan-300">
                       Total: ${order.totalCost.toFixed(2)}
                     </p>
+
+                    <button
+                      type="button"
+                      onClick={() => handleViewInvoice(order)}
+                      className="mt-3 w-full rounded-lg bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-300"
+                    >
+                      View Invoice
+                    </button>
                   </div>
                 </div>
               </div>

@@ -1,7 +1,7 @@
-import { emitInventoryDepleted } from "../realtime/socket.js";
 import { ProductRepository } from "../repositories/product.repository.js";
 import { OrderRepository } from "../repositories/order.repository.js";
 import { UserRepository } from "../repositories/user.repository.js";
+import { CartRepository } from "../repositories/cart.repository.js";
 import type { CheckoutPayload } from "../validation/checkout.validation.js";
 import type { CheckoutResponse } from "../types/checkout.js";
 import type { HttpError } from "../types/http-error.js";
@@ -12,6 +12,7 @@ export class TransactionService {
     private readonly productRepository: ProductRepository = new ProductRepository(),
     private readonly orderRepository: OrderRepository = new OrderRepository(),
     private readonly userRepository: UserRepository = new UserRepository(),
+    private readonly cartRepository: CartRepository = new CartRepository(),
   ) { }
 
   async checkoutCart(userId: string, payload: CheckoutPayload): Promise<CheckoutResponse> {
@@ -21,13 +22,18 @@ export class TransactionService {
       throw this.buildError("User not found", 404);
     }
 
-    const items = payload.items;
+    // Get cart from database instead of payload
+    const cart = await this.cartRepository.getCart(userId);
+
+    if (!cart || cart.items.length === 0) {
+      throw this.buildError("Cart is empty", 400);
+    }
+
     const orderItems: IOrder["items"] = [];
-    const depletedVariantIds: string[] = [];
     let totalCost = 0;
 
-    for (const item of items) {
-      const variant = await this.productRepository.findVariantById(item.variantId);
+    for (const cartItem of cart.items) {
+      const variant = await this.productRepository.findVariantById(cartItem.variantId.toString());
 
       if (!variant) {
         throw this.buildError("Variant not found", 404);
@@ -39,26 +45,14 @@ export class TransactionService {
         throw this.buildError("Product not found", 404);
       }
 
-      if (variant.inventoryCount < item.quantity) {
-        throw this.buildError("Insufficient inventory for checkout", 409);
-      }
-
-      variant.inventoryCount -= item.quantity;
-      const savedVariant = await this.productRepository.saveVariant(variant);
-
       orderItems.push({
         name: product.baseName,
-        sku: savedVariant.sku,
-        price: savedVariant.price,
-        quantity: item.quantity,
+        sku: variant.sku,
+        price: variant.price,
+        quantity: cartItem.quantity,
       });
 
-      totalCost += savedVariant.price * item.quantity;
-
-      if (savedVariant.inventoryCount === 0) {
-        depletedVariantIds.push(savedVariant._id.toString());
-      }
-
+      totalCost += variant.price * cartItem.quantity;
     }
 
     const orderData: IOrder = {
@@ -74,9 +68,8 @@ export class TransactionService {
     user.pastOrderIds.push(createdOrder._id);
     await user.save();
 
-    for (const variantId of depletedVariantIds) {
-      emitInventoryDepleted(variantId);
-    }
+    // Clear cart after successful checkout
+    await this.cartRepository.clearCart(userId);
 
     return {
       orderId: createdOrder._id.toString(),
