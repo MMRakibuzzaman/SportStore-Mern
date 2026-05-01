@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AxiosError } from "axios";
 import { FilterSidebar } from "../components/FilterSidebar.js";
@@ -8,6 +8,7 @@ import type {
 } from "../components/ProductCard.js";
 import { ProductCard } from "../components/ProductCard.js";
 import { api } from "../services/api.js";
+import { useProductRealtimeSync } from "../hooks/useProductRealtimeSync.js";
 import { useAppStore, type DisplayedProduct } from "../store/useAppStore.js";
 
 interface BackendCatalogItem {
@@ -277,76 +278,78 @@ export function Catalog() {
     setSearchParams({}, { replace: true });
   };
 
+  const loadCatalog = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const requestParams = new URLSearchParams();
+
+      selectedCategories.forEach((value) => requestParams.append("category", value));
+
+      requestParams.set("limit", String(DEFAULT_LIMIT));
+      requestParams.set("page", String(DEFAULT_PAGE));
+
+      const response = await api.get<BackendCatalogResponse>(
+        `/products?${requestParams.toString()}`,
+        { signal },
+      );
+
+      if (signal?.aborted) {
+        return;
+      }
+
+      const nextCards = response.data.data.map(mapToCatalogCard);
+      const grouped = groupProductsById(response.data.data);
+
+      setAllCatalogCards(nextCards);
+      setGroupedProducts(grouped);
+
+      const nextDisplayedProducts: DisplayedProduct[] = nextCards.map((card) => ({
+        productId: card.productId,
+        variantId: card.variantId,
+        baseName: card.baseName,
+        brand: card.brand,
+        price: card.price,
+        sku: card.sku,
+        size: card.size,
+        color: card.color,
+        weight: card.weight,
+        inventoryCount: card.inventoryCount,
+      }));
+
+      setDisplayedProducts(nextDisplayedProducts);
+
+      setPagination(response.data.pagination);
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to load collection.",
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, [selectedCategories, setDisplayedProducts]);
+
   useEffect(() => {
     const controller = new AbortController();
 
     const debounceId = window.setTimeout(async () => {
-      setIsLoading(true);
-      setErrorMessage(null);
-
-      try {
-        const requestParams = new URLSearchParams();
-
-        selectedCategories.forEach((value) =>
-          requestParams.append("category", value),
-        );
-
-        requestParams.set("limit", String(DEFAULT_LIMIT));
-        requestParams.set("page", String(DEFAULT_PAGE));
-
-        const response = await api.get<BackendCatalogResponse>(
-          `/products?${requestParams.toString()}`,
-          { signal: controller.signal },
-        );
-
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        const nextCards = response.data.data.map(mapToCatalogCard);
-        const grouped = groupProductsById(response.data.data);
-
-        setAllCatalogCards(nextCards);
-        setGroupedProducts(grouped);
-
-        const nextDisplayedProducts: DisplayedProduct[] = nextCards.map(
-          (card) => ({
-            productId: card.productId,
-            variantId: card.variantId,
-            baseName: card.baseName,
-            brand: card.brand,
-            price: card.price,
-            sku: card.sku,
-            size: card.size,
-            color: card.color,
-            weight: card.weight,
-            inventoryCount: card.inventoryCount,
-          }),
-        );
-
-        setDisplayedProducts(nextDisplayedProducts);
-
-        setPagination(response.data.pagination);
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setErrorMessage(
-          error instanceof Error ? error.message : "Failed to load collection.",
-        );
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
+      void loadCatalog(controller.signal);
     }, 300);
 
     return () => {
       window.clearTimeout(debounceId);
       controller.abort();
     };
-  }, [selectedCategories, setDisplayedProducts]);
+  }, [loadCatalog]);
+
+  useProductRealtimeSync(loadCatalog);
 
   const handleAddToCart = async (variantId: string): Promise<void> => {
     const item = allCatalogCards.find(
@@ -454,19 +457,19 @@ export function Catalog() {
                       imageUrl={
                         product.imagePath
                           ? (() => {
-                              const baseUrl =
-                                import.meta.env.VITE_API_BASE_URL ??
-                                "http://localhost:4000/api";
-                              const backendBase = baseUrl.replace(
-                                /\/api\/?$/,
-                                "",
-                              );
-                              return `${backendBase}/${product.imagePath.startsWith("/") ? product.imagePath.slice(1) : product.imagePath}`;
-                            })()
+                            const baseUrl =
+                              import.meta.env.VITE_API_BASE_URL ??
+                              "http://localhost:4000/api";
+                            const backendBase = baseUrl.replace(
+                              /\/api\/?$/,
+                              "",
+                            );
+                            return `${backendBase}/${product.imagePath.startsWith("/") ? product.imagePath.slice(1) : product.imagePath}`;
+                          })()
                           : buildPlaceholderImage(
-                              product.baseName,
-                              product.brand,
-                            )
+                            product.baseName,
+                            product.brand,
+                          )
                       }
                       inventoryCount={firstVariant?.inventoryCount ?? 0}
                       variants={product.variants}

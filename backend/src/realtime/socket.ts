@@ -51,6 +51,15 @@ export function emitInventoryUpdated(variantId: string, inventoryCount: number):
   io?.emit("inventory_updated", { variantId, inventoryCount });
 }
 
+export function emitCatalogChanged(payload: {
+  action: "created" | "updated" | "deleted";
+  entity: "product" | "variant";
+  id: string;
+  productId?: string;
+}): void {
+  io?.emit("catalog_changed", payload);
+}
+
 export function emitCartUpdated(userId: string, cartData: unknown): void {
   io?.emit(`cart:${userId}:updated`, cartData);
 }

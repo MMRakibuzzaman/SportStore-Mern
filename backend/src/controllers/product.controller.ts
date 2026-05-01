@@ -1,6 +1,10 @@
 import type { NextFunction, Request, Response } from "express";
 import type { VariantAttributes, VariantDocument } from "../models/variant.model.js";
-import { emitInventoryDepleted } from "../realtime/socket.js";
+import {
+  emitCatalogChanged,
+  emitInventoryDepleted,
+  emitInventoryUpdated,
+} from "../realtime/socket.js";
 import { ProductService } from "../services/product.service.js";
 import type { ProductCatalogQuery } from "../validation/product-query.validation.js";
 import { productCatalogQuerySchema } from "../validation/product-query.validation.js";
@@ -69,6 +73,8 @@ export class ProductController {
       const imagePath = req.file ? `/images/${req.file.filename}` : undefined;
       const createdProduct = await this.productService.createProduct(payload, imagePath);
 
+      this.emitCatalogMutation("created", "product", createdProduct._id.toString());
+
       res.status(201).json({
         success: true,
         data: createdProduct,
@@ -114,6 +120,8 @@ export class ProductController {
       const imagePath = req.file ? `/images/${req.file.filename}` : undefined;
       const updatedProduct = await this.productService.updateProduct(id, payload, imagePath);
 
+      this.emitCatalogMutation("updated", "product", updatedProduct._id.toString());
+
       res.status(200).json({
         success: true,
         data: updatedProduct,
@@ -127,6 +135,8 @@ export class ProductController {
     try {
       const { id } = this.parseProductIdParams(req.params);
       await this.productService.deleteProduct(id);
+
+      this.emitCatalogMutation("deleted", "product", id);
 
       res.status(200).json({
         success: true,
@@ -154,6 +164,13 @@ export class ProductController {
     try {
       const payload = this.parseCreateVariantPayload(req.body);
       const createdVariant = await this.productService.createVariant(payload);
+
+      this.emitCatalogMutation(
+        "created",
+        "variant",
+        createdVariant._id.toString(),
+        createdVariant.product.toString(),
+      );
 
       res.status(201).json({
         success: true,
@@ -184,6 +201,13 @@ export class ProductController {
       const payload = this.parseUpdateVariantPayload(req.body);
       const updatedVariant = await this.productService.updateVariant(id, payload);
 
+      this.emitCatalogMutation(
+        "updated",
+        "variant",
+        updatedVariant._id.toString(),
+        updatedVariant.product.toString(),
+      );
+
       res.status(200).json({
         success: true,
         data: updatedVariant,
@@ -197,6 +221,8 @@ export class ProductController {
     try {
       const { id } = this.parseVariantCrudIdParams(req.params);
       await this.productService.deleteVariant(id);
+
+      this.emitCatalogMutation("deleted", "variant", id);
 
       res.status(200).json({
         success: true,
@@ -246,6 +272,8 @@ export class ProductController {
       const { units } = this.parseIncreaseStockPayload(req.body);
       const updatedVariant = await this.productService.increaseVariantStock(variantId, units);
 
+      this.emitInventoryMutation(updatedVariant);
+
       res.status(200).json({
         success: true,
         data: {
@@ -263,6 +291,8 @@ export class ProductController {
       const { variantId } = this.parseVariantIdParams(req.params);
       const { inventoryCount } = this.parseSetStockPayload(req.body);
       const updatedVariant = await this.productService.setVariantStock(variantId, inventoryCount);
+
+      this.emitInventoryMutation(updatedVariant);
 
       res.status(200).json({
         success: true,
@@ -282,6 +312,8 @@ export class ProductController {
       const { units } = this.parseIncreaseStockPayload(req.body);
       const updatedVariant = await this.productService.increaseVariantStock(variantId, units);
 
+      this.emitInventoryMutation(updatedVariant);
+
       res.status(200).json({
         success: true,
         data: {
@@ -300,9 +332,7 @@ export class ProductController {
       const { units } = this.parseIncreaseStockPayload(req.body);
       const updatedVariant = await this.productService.decreaseVariantStock(variantId, units);
 
-      if (updatedVariant.inventoryCount === 0) {
-        emitInventoryDepleted(updatedVariant._id.toString());
-      }
+      this.emitInventoryMutation(updatedVariant);
 
       res.status(200).json({
         success: true,
@@ -421,6 +451,26 @@ export class ProductController {
     error.statusCode = statusCode;
     error.details = details;
     return error;
+  }
+
+  private emitCatalogMutation(
+    action: "created" | "updated" | "deleted",
+    entity: "product" | "variant",
+    id: string,
+    productId?: string,
+  ): void {
+    emitCatalogChanged({ action, entity, id, productId });
+  }
+
+  private emitInventoryMutation(variant: VariantDocument): void {
+    const variantId = variant._id.toString();
+    const inventoryCount = variant.inventoryCount;
+
+    emitInventoryUpdated(variantId, inventoryCount);
+
+    if (inventoryCount === 0) {
+      emitInventoryDepleted(variantId);
+    }
   }
 
   private normalizeVariantForResponse(variant: VariantDocument): Record<string, unknown> {

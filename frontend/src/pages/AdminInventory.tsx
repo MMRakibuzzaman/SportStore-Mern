@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 import { api } from "../services/api.js";
+import { useProductRealtimeSync } from "../hooks/useProductRealtimeSync.js";
 
 interface AdminVariantInventoryItem {
   variantId: string;
@@ -59,10 +60,39 @@ export function AdminInventory() {
     searchParams.get("stock")?.trim().toLowerCase() ?? "all";
   const stockFilter: "all" | "low" | "out" | "in" =
     stockFilterRaw === "low" ||
-    stockFilterRaw === "out" ||
-    stockFilterRaw === "in"
+      stockFilterRaw === "out" ||
+      stockFilterRaw === "in"
       ? stockFilterRaw
       : "all";
+
+  const loadVariants = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      setIsLoading(true);
+      setErrorMessage(null);
+
+      const response = await api.get<InventoryResponse>("/products/variants", {
+        signal,
+      });
+
+      if (signal?.aborted) {
+        return;
+      }
+
+      setVariants(response.data.data);
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to load inventory.",
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!inventorySocket) {
@@ -106,47 +136,16 @@ export function AdminInventory() {
     };
   }, []);
 
+  useProductRealtimeSync(loadVariants, false);
+
   useEffect(() => {
     const controller = new AbortController();
-
-    const loadVariants = async (): Promise<void> => {
-      try {
-        setIsLoading(true);
-        setErrorMessage(null);
-
-        const response = await api.get<InventoryResponse>(
-          "/products/variants",
-          {
-            signal: controller.signal,
-          },
-        );
-
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setVariants(response.data.data);
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setErrorMessage(
-          error instanceof Error ? error.message : "Failed to load inventory.",
-        );
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadVariants();
+    void loadVariants(controller.signal);
 
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [loadVariants]);
 
   const filteredVariants = useMemo(() => {
     if (stockFilter === "low") {
@@ -289,11 +288,10 @@ export function AdminInventory() {
                   return (
                     <tr
                       key={variant.variantId}
-                      className={`transition ${
-                        isLowStock
-                          ? "bg-red-500/20 hover:bg-red-500/25"
-                          : "bg-slate-900/20 hover:bg-white/5"
-                      }`}
+                      className={`transition ${isLowStock
+                        ? "bg-red-500/20 hover:bg-red-500/25"
+                        : "bg-slate-900/20 hover:bg-white/5"
+                        }`}
                     >
                       <td className="px-4 py-4 font-medium text-white">
                         {variant.sku}
@@ -304,8 +302,8 @@ export function AdminInventory() {
                         {Object.entries(variant.attributes).length === 0
                           ? "-"
                           : Object.entries(variant.attributes)
-                              .map(([key, value]) => `${key}: ${String(value)}`)
-                              .join(", ")}
+                            .map(([key, value]) => `${key}: ${String(value)}`)
+                            .join(", ")}
                       </td>
                       <td className="px-4 py-4 text-cyan-300">
                         ${variant.price.toFixed(2)}

@@ -9,6 +9,7 @@ import {
   categoryConfig,
   type ProductCategory,
 } from "../constants/categoryConfig.js";
+import { useProductRealtimeSync } from "../hooks/useProductRealtimeSync.js";
 import { api } from "../services/api.js";
 import { useAppStore } from "../store/useAppStore.js";
 
@@ -233,9 +234,9 @@ export function AdminCatalog() {
                 sku: variant.sku,
                 size: String(
                   variant.attributes.size ??
-                    variant.attributes.shoeSize ??
-                    variant.attributes.gripSize ??
-                    "-",
+                  variant.attributes.shoeSize ??
+                  variant.attributes.gripSize ??
+                  "-",
                 ),
                 color: String(variant.attributes.color ?? "-"),
                 weight: variant.weight,
@@ -270,6 +271,8 @@ export function AdminCatalog() {
       controller.abort();
     };
   }, [loadProducts]);
+
+  useProductRealtimeSync(loadProducts);
 
   const filteredProducts = useMemo(() => {
     if (!selectedCategoryParam) {
