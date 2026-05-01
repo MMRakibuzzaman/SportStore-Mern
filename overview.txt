@@ -1,0 +1,145 @@
+SportStore-Mern — Technology Overview
+
+Project summary
+SportStore is a full-stack sports e-commerce platform implemented with a TypeScript-first stack: a Node/Express backend with MongoDB (Mongoose) and a React + Vite frontend. It supports product browsing, filtering, cart/checkout, admin product management, realtime inventory updates via Socket.IO, validation with Zod, and scheduled jobs via node-cron.
+
+1. Technologies used (inventory)
+- Node.js (runtime) — backend server runtime (see backend/package.json)
+- Express — HTTP server and routing (backend/src/app.ts, backend/src/server.ts)
+- TypeScript — language for backend and frontend (backend/package.json, frontend/package.json, tsconfig.json files)
+- MongoDB + Mongoose — primary database and ODM (backend/src/config/database.ts, backend/src/models/*.ts)
+- JSON Web Tokens (jsonwebtoken) — authentication tokens (backend dependencies, auth controller/routes)
+- bcrypt — password hashing (backend dependencies, user model/service)
+- cookie-parser — cookie handling (backend/src/app.ts)
+- Zod — runtime validation with TypeScript-friendly schemas (both backend & frontend dependencies and validation files under backend/src/validation)
+- Multer — file upload handling for product images (backend dependency, upload middleware)
+- Socket.IO (server + socket.io-client) — real-time inventory and events (backend/src/realtime/socket.ts, frontend socket hooks)
+- node-cron — scheduled jobs (backend/src/services/CronService.ts)
+- Winston + morgan — application and request logging (backend/src/config/logger.ts, app.ts uses morgan)
+- Helmet + CORS — HTTP security headers and CORS policy (backend/src/app.ts)
+- React — frontend UI library (frontend/src)
+- Vite — frontend bundler and dev server (frontend/vite.config.ts)
+- Tailwind CSS — utility CSS framework via Vite plugin (frontend deps, vite.config.ts)
+- Zustand — lightweight client-side state (frontend/store or hooks)
+- react-hook-form + @hookform/resolvers — form handling and validation integration
+- Axios — HTTP client library used by frontend services
+- ESLint & TypeScript ESLint — linting and code quality (frontend devDependencies)
+- tsx & tsc — development runner and TypeScript compiler for backend (backend scripts)
+- dotenv — env var management (server startup imports "dotenv/config")
+
+2. Why each is used (purpose)
+- Node.js & Express: fast, minimal server to implement REST APIs, middleware, static assets.
+- TypeScript: provides static typing and safer refactorings across stack.
+- MongoDB + Mongoose: flexible document model for products/variants; Mongoose provides schemas, validations, transactions, and index management.
+- JWT + cookies: stateless authentication tokens suitable for APIs and SPAs; stored/sent via cookies for convenience.
+- bcrypt: securely hash passwords before storing in DB.
+- cookie-parser: parse/inspect cookies on incoming requests.
+- Zod: validate incoming request payloads and infer TypeScript types.
+- Multer: accept multipart/form-data (image uploads) and write to server public directories.
+- Socket.IO: push inventory and other real-time events to connected clients for immediate UI updates.
+- node-cron: run background/scheduled tasks like inventory reconciliation and cleanup.
+- Winston & morgan: produce structured logs and HTTP access logs for debugging/ops.
+- Helmet & CORS: basic security hardening and origin control to prevent common HTTP-level attacks.
+- React + Vite: fast developer feedback, HMR, and efficient bundling for SPA UX.
+- Tailwind: speed up UI development with utility classes and consistent design.
+- Zustand: small, simple global state for cart/UI without heavy boilerplate.
+- react-hook-form + resolvers: performant forms with easy schema-based validation (Zod).
+- Axios: promise-based, interceptable HTTP client (easy to attach auth tokens).
+
+3. Where they are used in the codebase (locations)
+- Server bootstrap and route mounting: backend/src/server.ts
+- Express middleware and CORS/helmet: backend/src/app.ts
+- Database connection + index setup: backend/src/config/database.ts
+- Models: backend/src/models/*.ts (product.model.ts, variant.model.ts, user.model.ts, order.model.ts, cart.model.ts)
+- Realtime: backend/src/realtime/socket.ts
+- Cron jobs: backend/src/services/CronService.ts
+- Auth endpoints: backend/src/controllers/auth.controller.ts and backend/src/routes/auth.routes.ts
+- Validation: backend/src/validation/*.ts and frontend validation hooks/components
+- File uploads: backend/src/middleware/uploadMiddleware.ts and public/images static folder
+- Frontend entry + app: frontend/src/main.tsx and frontend/src/App.tsx
+- Frontend components and hooks: frontend/src/components/* and frontend/src/hooks/* (e.g., useCartWebSocket.ts)
+- Frontend bundler config: frontend/vite.config.ts
+- Manifest & deps: backend/package.json, frontend/package.json, README.md
+
+4. How they are integrated and used (patterns)
+- HTTP API: Express routers form REST endpoints; controllers implement request handling; middleware applies validation (Zod), auth checks, and error handling.
+- Auth flow: user submits credentials -> server verifies password (bcrypt) -> issues JWT -> client stores token in cookie -> server middleware reads cookie and verifies JWT for protected routes.
+- Persistence: controllers call repository/service layers which interact with Mongoose models; checkout uses Mongoose transactions to atomically decrement inventory and create orders.
+- Validation: Zod schemas used in request validation middleware; frontend uses Zod + react-hook-form resolvers to validate forms client-side.
+- Real-time: server emits Socket.IO events when inventory or orders change; frontend hooks subscribe and update local Zustand store/UI.
+- File uploads: Multer saves uploaded files under backend/public/images; server exposes static route `/images` to serve them.
+- Cron tasks: CronService schedules tasks at startup (called from server.ts) to run periodic jobs.
+- Logging: morgan logs HTTP requests; Winston logs app-level events and errors; global error handler centralizes responses.
+
+5. Which package does what (concise map)
+- Express: API server and middleware.
+- Mongoose: data models, schemas, queries, indexes, transactions.
+- Socket.IO: websocket communication and event broadcasting.
+- Zod: schema validations and parsing.
+- JWT (`jsonwebtoken`): issue/verify authentication tokens.
+- bcrypt: hash and compare passwords.
+- Multer: handle multipart uploads.
+- node-cron: schedule background tasks.
+- Axios: client HTTP requests.
+- React: user interface rendering.
+- Vite: dev server and build for frontend.
+- Tailwind: CSS utilities.
+- Zustand: lightweight client-side state management.
+- react-hook-form: efficient form management.
+
+6. When these technologies run during user flows (chronology)
+- Startup (developer/operator): run `npm run dev` in backend and frontend. Server.ts connects DB, starts CronService, and initializes Socket.IO.
+- User visits site: frontend served by Vite (dev) or static build; React initializes UI and opens Socket.IO connection.
+- Browsing: frontend requests product lists via Axios -> Express handles and queries MongoDB via Mongoose.
+- Add to cart: frontend updates Zustand state; optionally persists cart via backend endpoint.
+- Login/Register: form validated client-side (Zod + react-hook-form) -> sent to backend -> backend verifies with bcrypt, issues JWT cookie.
+- Checkout: frontend calls checkout endpoint -> backend validates payload (Zod), opens Mongoose transaction, reduces inventory, creates order, emits Socket.IO update, returns result.
+- Admin actions: authenticated routes allow create/update products; uploads handled with Multer; changes persisted to MongoDB and broadcast if needed.
+- Background jobs: CronService runs scheduled tasks independent of user requests.
+
+7. Strengths, Weaknesses, Opportunities, Threats (SWOT)
+Strengths:
+- Full TypeScript across stack improves maintainability and dev DX.
+- Real-time inventory via Socket.IO reduces oversell and improves user trust.
+- Use of Mongoose transactions for checkout increases data integrity.
+- Lightweight frontend (Vite + React + Tailwind) enables fast development and responsive UI.
+- Zod provides strong runtime validation aligned with TypeScript.
+
+Weaknesses:
+- Image storage served from local `public/images` — not optimal for horizontal scaling or CDN distribution.
+- Socket.IO and node-cron are single-process by default; scaling requires extra infrastructure (Redis, sticky sessions).
+- No visible CI/tests in repo — increased risk of regressions.
+- Security settings (cookie flags, rate limiting, CSRF protection) need review for production readiness.
+
+Opportunities:
+- Add S3-backed uploads + CDN for scalable media delivery.
+- Introduce Redis for pub/sub if scaling Socket.IO and for caching; add rate-limiting middleware.
+- Add CI, automated tests, and linting enforcement pre-commit.
+- Add monitoring (Prometheus, Grafana), error tracking (Sentry), and centralized logs.
+
+Threats:
+- Without backups, MongoDB could be single point of data loss.
+- Misconfigured CORS or insecure cookies could expose auth tokens.
+- Outdated dependencies could introduce vulnerabilities.
+- Single-node Socket.IO + cron could cause inconsistencies under sudden load or crashes.
+
+8. Practical next recommendations (short)
+- Configure production-ready cookie flags: `HttpOnly`, `Secure`, `SameSite`.
+- Move images to object storage (S3) and serve via CDN.
+- Add Redis for pub/sub if scaling Socket.IO and for caching frequently read data.
+- Add automated backups for MongoDB and set up basic monitoring and alerts.
+- Add basic rate limiting and request size limits beyond current express.json limits if necessary.
+- Add unit/integration tests for checkout and auth flows.
+
+References (key files)
+- backend/package.json
+- frontend/package.json
+- backend/src/app.ts
+- backend/src/server.ts
+- backend/src/config/database.ts
+- backend/src/realtime/socket.ts
+- backend/src/services/CronService.ts
+- frontend/vite.config.ts
+- frontend/src/main.tsx
+
+End of overview.
